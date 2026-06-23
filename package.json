@@ -12,6 +12,7 @@
     "start:tv": "node scripts/start-lan.js",
     "deploy:cloud": "node scripts/deploy-cloud.js",
     "deploy:render": "node scripts/deploy-cloud.js",
+    "publish:github": "gh repo create neomaster/anime-stream-magnet --public --source=. --remote=origin --push --description \"New Era — anime streaming com magnet\"",
     "build:config": "node scripts/write-build-config.js",
     "build:apk": "node scripts/build-apk.js",
     "dev": "node --watch server.js",
