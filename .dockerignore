@@ -1,0 +1,8 @@
+node_modules
+android-app
+samsung-tv
+.git
+*.md
+.env
+cloud-url.txt
+.deploy

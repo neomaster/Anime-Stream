@@ -1,0 +1,24 @@
+# Blueprint Render — conecte este repositório GitHub em dashboard.render.com/blueprints
+services:
+  - type: web
+    name: new-era
+    runtime: node
+    plan: free
+    buildCommand: npm ci --omit=dev
+    startCommand: node server.js
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: CLOUD_MODE
+        value: "true"
+      - key: ALT_SOURCES
+        value: "true"
+      - key: NYAA_ENABLED
+        value: "true"
+      - key: NYAA_BASE
+        value: https://nyaa.one
+      - key: ANIMEFIRE_BASE
+        value: https://animefire.io
+      - key: VAULT_SECRET
+        generateValue: true

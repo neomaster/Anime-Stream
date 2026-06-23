@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>New Era</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/css/style.css" />
+  <script>
+  (function(){function n(s){return/ChromeMethodBFE|\.ldb\b|FILE_ERROR_NO_SPACE|Unable to create writable file|NewWritableFile/i.test(String(s))}if(window.__animeStreamNoiseShield)return;window.__animeStreamNoiseShield=1;window.addEventListener('unhandledrejection',function(e){if(n(e.reason&&(e.reason.message||e.reason)))e.preventDefault()},1);window.addEventListener('error',function(e){if(n(e.message||e.error))e.preventDefault()},1)})();
+  </script>
+  <script src="/js/storage-shield.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.17/dist/hls.min.js"></script>
+</head>
+<body>
+  <div class="app">
+    <header class="header">
+      <div class="header-inner">
+        <a href="/" class="logo" data-nav>
+          <span class="logo-icon">⬡</span>
+          <span class="logo-text">New<span class="accent"> Era</span></span>
+        </a>
+        <form class="search-form" id="searchForm">
+          <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
+          </svg>
+          <input type="search" id="searchInput" placeholder="Buscar anime..." autocomplete="off" />
+          <div class="search-suggestions" id="searchSuggestions" hidden></div>
+        </form>
+        <div class="header-status" id="goanimeStatus" title="Status do servidor"></div>
+      </div>
+    </header>
+
+    <main id="main">
+      <section class="hero" id="heroSection">
+        <div class="hero-bg"></div>
+        <div class="hero-content">
+          <h1>Assista seus animes favoritos</h1>
+          <p>Busque, descubra e assista em streaming</p>
+        </div>
+      </section>
+
+      <section class="section" id="homeSection">
+        <section class="continue-section" id="continueSection" hidden>
+          <div class="section-header">
+            <h2>Continuar assistindo</h2>
+          </div>
+          <div class="anime-grid" id="continueGrid"></div>
+        </section>
+
+        <div class="section-header">
+          <h2>Em alta</h2>
+        </div>
+        <div class="anime-grid" id="topGrid"></div>
+
+        <div class="section-header">
+          <h2>Temporada atual</h2>
+        </div>
+        <div class="anime-grid" id="seasonGrid"></div>
+      </section>
+
+      <section class="section search-results" id="searchSection" hidden>
+        <div class="section-header">
+          <h2>Resultados</h2>
+          <span class="result-count" id="resultCount"></span>
+        </div>
+        <div class="anime-grid" id="searchGrid"></div>
+      </section>
+
+      <section class="anime-detail" id="detailSection" hidden>
+        <div class="detail-backdrop" id="detailBackdrop"></div>
+        <div class="detail-layout">
+          <aside class="detail-poster-wrap">
+            <img class="detail-poster" id="detailPoster" alt="" />
+            <div class="detail-meta" id="detailMeta"></div>
+          </aside>
+          <div class="detail-main">
+            <h1 class="detail-title" id="detailTitle"></h1>
+            <p class="detail-synopsis" id="detailSynopsis"></p>
+            <div class="detail-actions">
+              <div class="source-badge" id="sourceBadge"></div>
+              <div class="audio-pref-controls" id="audioPrefControls">
+                <label for="audioPrefSelect">Áudio</label>
+                <select id="audioPrefSelect">
+                  <option value="legendado">Legendado (PT-BR)</option>
+                  <option value="dublado">Dublado</option>
+                </select>
+              </div>
+              <button type="button" class="btn-continue" id="continueBtn" hidden>Continuar episódio</button>
+              <button type="button" class="btn-fav" id="favBtn" title="Favoritar">☆</button>
+            </div>
+
+            <div class="player-section" id="playerSection" hidden>
+              <div class="player-wrap" id="playerWrap">
+                <video id="videoPlayer" crossorigin="anonymous" playsinline></video>
+                <div class="player-episode-label" id="playerEpisodeLabel" hidden></div>
+                <div class="player-loading" id="playerLoading" hidden>
+                  <div class="spinner"></div>
+                  <span id="playerLoadingText">Carregando episódio...</span>
+                </div>
+                <div class="player-controls" id="playerControls">
+                  <button type="button" class="ctrl-btn ctrl-btn-lg" id="playPauseBtn" aria-label="Reproduzir/Pausar">
+                    <svg class="icon-play" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+                    <svg class="icon-pause" viewBox="0 0 24 24" fill="currentColor" hidden><path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z"/></svg>
+                  </button>
+                  <button type="button" class="ctrl-btn" id="rewindBtn" aria-label="Voltar 10 segundos" title="−10s">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 9-9"/><polyline points="3 3 3 12 12 12"/></svg>
+                    <span>10</span>
+                  </button>
+                  <button type="button" class="ctrl-btn" id="forwardBtn" aria-label="Avançar 10 segundos" title="+10s">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-9-9"/><polyline points="21 3 21 12 12 12"/></svg>
+                    <span>10</span>
+                  </button>
+                  <div class="progress-area">
+                    <input type="range" class="progress-bar" id="progressBar" min="0" max="1000" value="0" step="1" aria-label="Progresso" />
+                  </div>
+                  <span class="time-display" id="timeDisplay">0:00 / 0:00</span>
+                  <button type="button" class="ctrl-btn mute-btn" id="muteBtn" aria-label="Volume">
+                    <span class="mute-icon-slot" aria-hidden="true">
+                      <svg class="icon-vol" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>
+                      <svg class="icon-muted" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" hidden><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>
+                    </span>
+                  </button>
+                  <input type="range" class="volume-bar" id="volumeBar" min="0" max="100" value="100" aria-label="Volume" />
+                  <button type="button" class="ctrl-btn" id="fullscreenBtn" aria-label="Tela cheia">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>
+                  </button>
+                </div>
+              </div>
+              <div class="player-toolbar">
+                <span class="embedded-sub-info" id="embeddedSubInfo" hidden></span>
+                <div class="subtitle-controls" id="subtitleControls" hidden>
+                  <label>Legenda</label>
+                  <select id="subtitleSelect"></select>
+                </div>
+                <div class="quality-controls" id="qualityControls" hidden>
+                  <label>Qualidade</label>
+                  <select id="qualitySelect"></select>
+                </div>
+              </div>
+            </div>
+
+            <div class="episodes-section">
+              <div class="episodes-header">
+                <h3>Episódios</h3>
+                <div class="episodes-tools">
+                  <input type="search" id="epFilter" class="ep-filter" placeholder="Ir para ep..." inputmode="numeric" />
+                  <div class="episode-pagination" id="episodePagination" hidden>
+                    <button type="button" class="page-btn" id="epPrevBtn">‹</button>
+                    <span id="epPageLabel"></span>
+                    <button type="button" class="page-btn" id="epNextBtn">›</button>
+                  </div>
+                </div>
+              </div>
+              <div class="episodes-grid" id="episodesGrid"></div>
+              <p class="episodes-empty" id="episodesEmpty" hidden>
+                Nenhum episódio encontrado. Este anime pode não estar disponível no momento.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <span class="footer-credit">Feito por Neomaster</span>
+    </footer>
+  </div>
+
+  <div class="episode-picker" id="episodePicker" hidden>
+    <div class="episode-picker-backdrop"></div>
+    <div class="episode-picker-card" role="dialog" aria-modal="true" aria-labelledby="pickerTitle">
+      <h4 id="pickerTitle">Episódio <span id="pickerEpNum"></span></h4>
+      <p class="episode-picker-hint">Escolha como assistir este episódio.</p>
+      <button type="button" class="btn-picker btn-picker-stream" id="pickerStreamBtn">▶ Assistir online</button>
+      <button type="button" class="btn-picker btn-picker-magnet" id="pickerMagnetBtn">🧲 Streaming magnet</button>
+      <p class="episode-picker-magnet-status" id="pickerMagnetStatus" hidden aria-live="polite"></p>
+      <button type="button" class="btn-picker btn-picker-cancel" id="pickerCancelBtn">Cancelar</button>
+    </div>
+  </div>
+
+  <div class="toast" id="toast" hidden></div>
+
+  <script type="module" src="/js/app.js"></script>
+</body>
+</html>

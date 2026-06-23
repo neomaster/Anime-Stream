@@ -1,0 +1,13 @@
+node_modules/
+.env
+.env.*
+*.log
+.DS_Store
+android-app/app/build/
+android-app/.gradle/
+android-app/dist/
+android-app/app/src/main/assets/
+samsung-tv/dist/
+cloud-url.txt
+.deploy/
+.railway/

@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0a0a0f" />
+  <title>New Era</title>
+  <link rel="stylesheet" href="css/app.css" />
+  <script src="js/storage-shield.js"></script>
+</head>
+<body>
+  <section class="screen setup-screen" id="setupScreen">
+    <div class="setup-card">
+      <div class="logo-block">
+        <span class="logo-icon">⬡</span>
+        <h1>New<span class="accent"> Era</span></h1>
+        <p class="setup-sub" id="setupMessage">Conectando ao servidor...</p>
+      </div>
+      <div class="setup-connecting">
+        <div class="spinner"></div>
+      </div>
+      <p class="setup-status" id="setupStatus"></p>
+      <button type="button" id="retryConnectBtn" class="btn btn-primary" hidden>Tentar novamente</button>
+    </div>
+  </section>
+
+  <div class="app" id="appRoot" hidden>
+    <header class="header">
+      <div class="header-inner">
+        <button type="button" class="logo" id="homeBtn">
+          <span class="logo-icon">⬡</span>
+          <span class="logo-text">New<span class="accent"> Era</span></span>
+        </button>
+        <form class="search-form" id="searchForm">
+          <input type="search" id="searchInput" class="tv-input" placeholder="Buscar anime..." autocomplete="off" />
+          <button type="submit" class="btn btn-search" id="searchBtn">Buscar</button>
+        </form>
+        <div class="header-status" id="serverStatus" title="Status do servidor"></div>
+      </div>
+    </header>
+
+    <main id="main">
+      <section class="section" id="homeSection">
+        <section id="continueSection" hidden>
+          <div class="section-header"><h2>Continuar assistindo</h2></div>
+          <div class="anime-grid" id="continueGrid"></div>
+        </section>
+        <div class="section-header"><h2>Em alta</h2></div>
+        <div class="anime-grid" id="topGrid"></div>
+        <div class="section-header"><h2>Temporada atual</h2></div>
+        <div class="anime-grid" id="seasonGrid"></div>
+      </section>
+
+      <section class="section search-results" id="searchSection" hidden>
+        <div class="section-header">
+          <h2>Resultados</h2>
+          <span class="result-count" id="resultCount"></span>
+        </div>
+        <div class="anime-grid" id="searchGrid"></div>
+      </section>
+
+      <section class="anime-detail" id="detailSection" hidden>
+        <div class="detail-backdrop" id="detailBackdrop"></div>
+        <div class="detail-layout">
+          <aside class="detail-poster-wrap">
+            <img class="detail-poster" id="detailPoster" alt="" />
+            <div class="detail-meta" id="detailMeta"></div>
+          </aside>
+          <div class="detail-main">
+            <h1 class="detail-title" id="detailTitle"></h1>
+            <p class="detail-synopsis" id="detailSynopsis"></p>
+            <div class="detail-actions">
+              <div class="source-badge" id="sourceBadge"></div>
+              <div class="audio-pref-controls" id="audioPrefControls">
+                <label for="audioPrefSelect">Áudio</label>
+                <select id="audioPrefSelect" class="focusable">
+                  <option value="legendado">Legendado (PT-BR)</option>
+                  <option value="dublado">Dublado</option>
+                </select>
+              </div>
+              <button type="button" class="btn btn-continue" id="continueBtn" hidden>Continuar</button>
+            </div>
+
+            <div class="player-section" id="playerSection" hidden>
+              <div class="player-wrap" id="playerWrap">
+                <video id="videoPlayer" crossorigin="anonymous" playsinline webkit-playsinline></video>
+                <div class="player-episode-label" id="playerEpisodeLabel" hidden></div>
+                <div class="player-loading" id="playerLoading" hidden>
+                  <div class="spinner"></div>
+                  <span id="playerLoadingText">Carregando...</span>
+                </div>
+                <div class="player-controls" id="playerControls">
+                  <button type="button" class="ctrl-btn ctrl-btn-lg" id="playPauseBtn">
+                    <span class="icon-play">▶</span>
+                    <span class="icon-pause" hidden>⏸</span>
+                  </button>
+                  <button type="button" class="ctrl-btn" id="rewindBtn">⏪</button>
+                  <button type="button" class="ctrl-btn" id="forwardBtn">⏩</button>
+                  <div class="progress-area">
+                    <input type="range" class="progress-bar" id="progressBar" min="0" max="1000" value="0" />
+                  </div>
+                  <span class="time-display" id="timeDisplay">0:00 / 0:00</span>
+                  <button type="button" class="ctrl-btn" id="fullscreenBtn" title="Tela cheia" aria-label="Tela cheia">
+                    <span class="icon-fs-enter">⛶</span>
+                    <span class="icon-fs-exit" hidden>⛶</span>
+                  </button>
+                </div>
+              </div>
+              <div class="player-toolbar">
+                <span class="embedded-sub-info" id="embeddedSubInfo" hidden></span>
+                <div class="subtitle-controls" id="subtitleControls" hidden>
+                  <label>Legenda</label>
+                  <select id="subtitleSelect"></select>
+                </div>
+                <div class="quality-controls" id="qualityControls" hidden>
+                  <label>Qualidade</label>
+                  <select id="qualitySelect"></select>
+                </div>
+              </div>
+            </div>
+
+            <div class="episodes-section">
+              <div class="episodes-header">
+                <h3>Episodios</h3>
+                <div class="episodes-tools">
+                  <input type="tel" id="epFilter" class="ep-filter focusable" placeholder="Ep..." inputmode="numeric" maxlength="4" />
+                  <div class="episode-pagination" id="episodePagination" hidden>
+                  <button type="button" class="btn btn-ghost" id="epPrevBtn">Anterior</button>
+                  <span id="epPageLabel"></span>
+                  <button type="button" class="btn btn-ghost" id="epNextBtn">Proximo</button>
+                  </div>
+                </div>
+              </div>
+              <div class="episodes-grid" id="episodesGrid"></div>
+              <p class="episodes-empty" id="episodesEmpty" hidden>Nenhum episodio encontrado.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <span id="serverLabel">Servidor local</span>
+      <span class="footer-credit">Feito por Neomaster</span>
+    </footer>
+  </div>
+
+  <div class="global-loading" id="globalLoading" hidden>
+    <div class="spinner"></div>
+    <span id="globalLoadingText">Carregando...</span>
+  </div>
+  <div class="episode-picker" id="episodePicker" hidden>
+    <div class="episode-picker-backdrop"></div>
+    <div class="episode-picker-card">
+      <h4>Episodio <span id="pickerEpNum"></span></h4>
+      <p class="episode-picker-hint">Como assistir?</p>
+      <button type="button" class="btn btn-primary" id="pickerStreamBtn">Assistir online</button>
+      <button type="button" class="btn btn-secondary" id="pickerMagnetBtn">Magnet</button>
+      <p class="episode-picker-magnet-status" id="pickerMagnetStatus" hidden aria-live="polite"></p>
+      <button type="button" class="btn btn-ghost" id="pickerCancelBtn">Cancelar</button>
+    </div>
+  </div>
+
+  <div class="toast" id="toast" hidden></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.17/dist/hls.min.js"></script>
+  <script src="js/build-config.js"></script>
+  <script src="js/config.js"></script>
+  <script src="js/storage-safe.js"></script>
+  <script src="js/subtitles.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/alt-sources.js"></script>
+  <script src="js/player.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

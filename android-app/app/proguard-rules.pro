@@ -1,0 +1,1 @@
+# Anime Stream - sem ofuscacao necessaria

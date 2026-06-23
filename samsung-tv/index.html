@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=1920, height=1080, initial-scale=1" />
+  <title>New Era</title>
+  <link rel="stylesheet" href="css/tv.css" />
+</head>
+<body>
+  <!-- Configuração do servidor PC -->
+  <section class="screen setup-screen" id="setupScreen">
+    <div class="setup-card">
+      <div class="logo-block">
+        <span class="logo-icon">⬡</span>
+        <h1>New<span class="accent"> Era</span></h1>
+        <p class="setup-sub">Conecte-se ao servidor no seu PC</p>
+      </div>
+
+      <label class="field-label">IP do PC (somente numeros)</label>
+      <div class="ip-row">
+        <input type="tel" id="ip1" class="ip-octet focusable tv-input" maxlength="3"
+               inputmode="numeric" pattern="[0-9]*" autocomplete="off" aria-label="Octeto 1" />
+        <span class="ip-sep">.</span>
+        <input type="tel" id="ip2" class="ip-octet focusable tv-input" maxlength="3"
+               inputmode="numeric" pattern="[0-9]*" autocomplete="off" aria-label="Octeto 2" />
+        <span class="ip-sep">.</span>
+        <input type="tel" id="ip3" class="ip-octet focusable tv-input" maxlength="3"
+               inputmode="numeric" pattern="[0-9]*" autocomplete="off" aria-label="Octeto 3" />
+        <span class="ip-sep">.</span>
+        <input type="tel" id="ip4" class="ip-octet focusable tv-input" maxlength="3"
+               inputmode="numeric" pattern="[0-9]*" autocomplete="off" aria-label="Octeto 4" />
+      </div>
+
+      <label class="field-label" for="portInput">Porta</label>
+      <input type="tel" id="portInput" class="focusable tv-input port-input" maxlength="5"
+             value="3456" inputmode="numeric" pattern="[0-9]*" autocomplete="off" />
+
+      <p class="field-hint">Endereco: <strong id="ipPreview">—</strong></p>
+      <p class="field-hint">Servidor no PC: <code>npm run start:tv</code></p>
+      <p class="field-hint setup-warn">Use o IP <strong>192.168.x.x</strong> do Wi-Fi. Nao use IP de VPN (ex: 10.5.x.x).</p>
+
+      <div class="setup-actions">
+        <button type="button" id="saveServerBtn" class="btn btn-primary focusable">Conectar</button>
+        <button type="button" id="testServerBtn" class="btn btn-secondary focusable">Testar conexão</button>
+      </div>
+
+      <p class="setup-status" id="setupStatus"></p>
+
+      <div class="setup-help">
+        <h3>Como configurar</h3>
+        <ol>
+          <li>No PC, abra o terminal na pasta do projeto</li>
+          <li>Execute <code>npm run start:tv</code></li>
+          <li>Anote os numeros do IP (ex: 192 · 168 · 1 · 2)</li>
+          <li>Digite cada bloco com o teclado numerico e pressione OK</li>
+        </ol>
+      </div>
+    </div>
+  </section>
+
+  <!-- App principal -->
+  <div class="app" id="appRoot" hidden>
+    <header class="header">
+      <div class="header-inner">
+        <button type="button" class="logo focusable" id="homeBtn" data-nav>
+          <span class="logo-icon">⬡</span>
+          <span class="logo-text">New<span class="accent"> Era</span></span>
+        </button>
+
+        <form class="search-form" id="searchForm">
+          <input type="search" id="searchInput" class="focusable tv-input"
+                 placeholder="Buscar anime..." autocomplete="off" />
+          <button type="submit" class="btn btn-search focusable" id="searchBtn">Buscar</button>
+        </form>
+
+        <div class="header-right">
+          <button type="button" class="btn btn-ghost focusable" id="settingsBtn" title="Configurações">⚙</button>
+          <div class="header-status" id="serverStatus" title="Status do servidor"></div>
+        </div>
+      </div>
+    </header>
+
+    <div class="hint-bar" id="hintBar"></div>
+
+    <main id="main">
+      <section class="hero" id="heroSection">
+        <div class="hero-content">
+          <h1>Assista seus animes favoritos</h1>
+          <p>Conecte-se ao servidor na mesma rede do PC</p>
+        </div>
+      </section>
+
+      <section class="section" id="homeSection">
+        <section id="continueSection" hidden>
+          <div class="section-header"><h2>Continuar assistindo</h2></div>
+          <div class="anime-grid" id="continueGrid"></div>
+        </section>
+        <div class="section-header"><h2>Em alta</h2></div>
+        <div class="anime-grid" id="topGrid"></div>
+
+        <div class="section-header"><h2>Temporada atual</h2></div>
+        <div class="anime-grid" id="seasonGrid"></div>
+      </section>
+
+      <section class="section search-results" id="searchSection" hidden>
+        <div class="section-header">
+          <h2>Resultados</h2>
+          <span class="result-count" id="resultCount"></span>
+        </div>
+        <div class="anime-grid" id="searchGrid"></div>
+      </section>
+
+      <section class="anime-detail" id="detailSection" hidden>
+        <div class="detail-backdrop" id="detailBackdrop"></div>
+        <div class="detail-layout">
+          <aside class="detail-poster-wrap">
+            <img class="detail-poster" id="detailPoster" alt="" />
+            <div class="detail-meta" id="detailMeta"></div>
+          </aside>
+          <div class="detail-main">
+            <h1 class="detail-title" id="detailTitle"></h1>
+            <p class="detail-synopsis" id="detailSynopsis"></p>
+            <div class="detail-actions">
+              <div class="source-badge" id="sourceBadge"></div>
+              <div class="audio-pref-controls" id="audioPrefControls">
+                <label for="audioPrefSelect">Áudio</label>
+                <select id="audioPrefSelect" class="focusable tv-select">
+                  <option value="legendado">Legendado (PT-BR)</option>
+                  <option value="dublado">Dublado</option>
+                </select>
+              </div>
+              <button type="button" class="btn btn-continue focusable" id="continueBtn" hidden>Continuar</button>
+            </div>
+
+            <div class="player-section" id="playerSection" hidden>
+              <div class="player-wrap" id="playerWrap">
+                <video id="videoPlayer" crossorigin="anonymous" playsinline></video>
+                <div class="player-episode-label" id="playerEpisodeLabel" hidden></div>
+                <div class="player-loading" id="playerLoading" hidden>
+                  <div class="spinner"></div>
+                  <span id="playerLoadingText">Carregando episódio...</span>
+                </div>
+                <div class="player-controls" id="playerControls">
+                  <button type="button" class="ctrl-btn ctrl-btn-lg focusable" id="playPauseBtn" aria-label="Reproduzir/Pausar">
+                    <span class="icon-play">▶</span>
+                    <span class="icon-pause" hidden>⏸</span>
+                  </button>
+                  <button type="button" class="ctrl-btn focusable" id="rewindBtn" title="−10s">⏪ 10</button>
+                  <button type="button" class="ctrl-btn focusable" id="forwardBtn" title="+10s">10 ⏩</button>
+                  <div class="progress-area">
+                    <input type="range" class="progress-bar focusable" id="progressBar"
+                           min="0" max="1000" value="0" step="1" aria-label="Progresso" />
+                  </div>
+                  <span class="time-display" id="timeDisplay">0:00 / 0:00</span>
+                </div>
+              </div>
+              <div class="player-toolbar">
+                <span class="embedded-sub-info" id="embeddedSubInfo" hidden></span>
+                <div class="subtitle-controls" id="subtitleControls" hidden>
+                  <label>Legenda</label>
+                  <select id="subtitleSelect" class="focusable tv-select"></select>
+                </div>
+                <div class="quality-controls" id="qualityControls" hidden>
+                  <label>Qualidade</label>
+                  <select id="qualitySelect" class="focusable tv-select"></select>
+                </div>
+              </div>
+            </div>
+
+            <div class="episodes-section">
+              <div class="episodes-header">
+                <h3>Episodios</h3>
+                <div class="episodes-tools">
+                  <input type="tel" id="epFilter" class="ep-filter focusable tv-input" placeholder="Ep..." inputmode="numeric" maxlength="4" />
+                  <div class="episode-pagination" id="episodePagination" hidden>
+                  <button type="button" class="btn btn-ghost focusable" id="epPrevBtn">Anterior</button>
+                  <span id="epPageLabel"></span>
+                  <button type="button" class="btn btn-ghost focusable" id="epNextBtn">Proximo</button>
+                  </div>
+                </div>
+              </div>
+              <div class="episodes-grid" id="episodesGrid"></div>
+              <p class="episodes-empty" id="episodesEmpty" hidden>
+                Nenhum episodio encontrado. Este anime pode nao estar disponivel no momento.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <span id="serverLabel"></span>
+      <span class="footer-credit">Feito por Neomaster</span>
+    </footer>
+  </div>
+
+  <div class="global-loading" id="globalLoading" hidden>
+    <div class="spinner"></div>
+    <span id="globalLoadingText">Carregando...</span>
+  </div>
+
+  <div class="toast" id="toast" hidden></div>
+
+  <script src="js/config.js"></script>
+  <script src="js/subtitles.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/remote.js"></script>
+  <script src="js/player.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

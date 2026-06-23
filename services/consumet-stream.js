@@ -1,0 +1,284 @@
+const fetch = require('node-fetch');
+const {
+  rankCandidates,
+  buildSearchQueries,
+  titleSimilarity,
+} = require('./matcher');
+const { normalizeSubtitles, subtitleLangLabel } = require('./subtitles');
+const unityDirect = require('./animeunity-direct');
+const config = require('../config');
+
+const PROVIDER_NAME = 'AnimeUnity';
+const EP_PREFIX = 'consumet:';
+
+let animeModule = null;
+
+async function getSaturnProvider() {
+  if (!animeModule) animeModule = await import('@consumet/extensions');
+  return new animeModule.ANIME.AnimeSaturn();
+}
+
+function useDirectUnity() {
+  return config.CLOUD_MODE;
+}
+
+function encodeRef(provider, id, animeId) {
+  const base = `${EP_PREFIX}${provider}:${id}`;
+  return animeId ? `${base}~${animeId}` : base;
+}
+
+function decodeRef(ref) {
+  if (!ref || !ref.startsWith(EP_PREFIX)) return null;
+  const body = ref.slice(EP_PREFIX.length);
+  const tilde = body.indexOf('~');
+  const main = tilde >= 0 ? body.slice(0, tilde) : body;
+  const animeId = tilde >= 0 ? body.slice(tilde + 1) : null;
+  const sep = main.indexOf(':');
+  if (sep < 0) return null;
+  return { provider: main.slice(0, sep), id: main.slice(sep + 1), animeId };
+}
+
+function parseEpisodeNumber(episodeId, fallbackIndex) {
+  const slash = episodeId.match(/\/(\d+)$/);
+  if (slash) return parseInt(slash[1], 10) || fallbackIndex + 1;
+  const dash = episodeId.match(/-ep-(\d+)$/i);
+  if (dash) return parseInt(dash[1], 10) || fallbackIndex + 1;
+  return fallbackIndex + 1;
+}
+
+function mapSearchResult(item) {
+  return {
+    name: item.title,
+    url: encodeRef(PROVIDER_NAME, item.id),
+    image: item.image || null,
+    source: 'animeunity',
+    dub: item.dub ?? null,
+  };
+}
+
+async function searchUnity(query) {
+  const items = await unityDirect.search(query);
+  return items.map(mapSearchResult);
+}
+
+async function searchSaturn(query) {
+  const provider = await getSaturnProvider();
+  const data = await provider.search(query);
+  return (data.results || []).map((item) => ({
+    name: item.title,
+    url: encodeRef('AnimeSaturn', item.id),
+    image: item.image || null,
+    source: 'animesaturn',
+  }));
+}
+
+async function searchAnimeFire(query) {
+  if (useDirectUnity()) {
+    try {
+      const unity = await searchUnity(query);
+      if (unity.length) return unity;
+    } catch (err) {
+      console.warn('[AnimeUnity]', query, err.message);
+    }
+  }
+
+  try {
+    return await searchSaturn(query);
+  } catch {
+    return [];
+  }
+}
+
+async function searchAnimeFireMulti(queries) {
+  const seen = new Set();
+  const merged = [];
+
+  for (const q of queries) {
+    const lists = useDirectUnity()
+      ? [await searchUnity(q).catch(() => []), await searchSaturn(q).catch(() => [])]
+      : [await searchSaturn(q).catch(() => [])];
+
+    for (const list of lists) {
+      for (const item of list) {
+        if (!seen.has(item.url)) {
+          seen.add(item.url);
+          merged.push(item);
+        }
+      }
+    }
+  }
+
+  return merged;
+}
+
+async function validateStreamUrl(url) {
+  if (!url) return false;
+  try {
+    const res = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'User-Agent': config.USER_AGENT,
+        Range: 'bytes=0-512',
+        Referer: 'https://www.animeunity.to/',
+      },
+      timeout: 15000,
+    });
+    return res.status === 200 || res.status === 206;
+  } catch {
+    return false;
+  }
+}
+
+async function findBestMatch(jikanTitle, alternatives = [], options = {}) {
+  const titles = [jikanTitle, ...alternatives].filter(Boolean);
+  const queries = buildSearchQueries(titles);
+  const results = await searchAnimeFireMulti(queries);
+  if (!results.length) return null;
+
+  const ranked = rankCandidates(results, titles, jikanTitle, options);
+  const tryLimit = useDirectUnity() ? 4 : 8;
+  for (const candidate of ranked.slice(0, tryLimit)) {
+    try {
+      const eps = await getEpisodes(candidate.url);
+      if (!eps.length) continue;
+
+      if (useDirectUnity() || candidate.url.includes('AnimeUnity')) {
+        const stream = await fetchEpisodeStreamFromRef(decodeRef(eps[0].url));
+        if (await validateStreamUrl(stream.videoUrl)) {
+          return candidate;
+        }
+        continue;
+      }
+
+      return candidate;
+    } catch {
+      /* next */
+    }
+  }
+
+  return null;
+}
+
+async function fetchAnimeInfoByRef(decoded) {
+  if (decoded.provider === PROVIDER_NAME || useDirectUnity()) {
+    const animeId = decoded.animeId || decoded.id;
+    const info = await unityDirect.fetchAnimeInfo(animeId);
+    return { providerName: PROVIDER_NAME, info };
+  }
+
+  const provider = await getSaturnProvider();
+  const animeId = decoded.animeId || decoded.id;
+  const info = await provider.fetchAnimeInfo(animeId);
+  return { providerName: 'AnimeSaturn', info };
+}
+
+async function getEpisodes(animeRef) {
+  const decoded = decodeRef(animeRef);
+  const { providerName, info } = await fetchAnimeInfoByRef(decoded);
+  const animeId = decoded.animeId || decoded.id;
+
+  const episodes = (info.episodes || []).map((ep, i) => {
+    const epId = ep.id || `${animeId}/${ep.number}`;
+    const num = ep.number > 0 ? ep.number : parseEpisodeNumber(epId, i);
+    return {
+      number: num,
+      label: ep.title || `Episodio ${num}`,
+      url: encodeRef(providerName, epId, animeId),
+    };
+  });
+
+  episodes.sort((a, b) => a.number - b.number);
+  return episodes;
+}
+
+async function getAnimeFromSource(sourceRef) {
+  const { info, providerName } = await fetchAnimeInfoByRef(decodeRef(sourceRef));
+  const episodes = await getEpisodes(sourceRef);
+
+  return {
+    title: info.title,
+    poster: info.image || null,
+    synopsis: info.description || '',
+    source: { name: info.title, url: sourceRef, source: providerName.toLowerCase() },
+    episodes,
+  };
+}
+
+async function fetchEpisodeStreamFromRef(decoded) {
+  let sources = [];
+  let rawSubtitles = [];
+  let streamMeta = {};
+
+  if (decoded.provider === PROVIDER_NAME || useDirectUnity()) {
+    const data = await unityDirect.fetchEpisodeSources(decoded.id);
+    sources = data.sources || [];
+    rawSubtitles = data.subtitles || [];
+    streamMeta = {
+      audioMode: data.audioMode || 'legendado',
+      subtitleLang: data.subtitleLang || null,
+      embeddedSubtitles: !!data.embeddedSubtitles,
+    };
+  } else {
+    const provider = await getSaturnProvider();
+    const data = await provider.fetchEpisodeSources(decoded.id);
+    sources = data.sources || [];
+  }
+
+  const sorted = [...sources].sort((a, b) => (b.isM3U8 ? 1 : 0) - (a.isM3U8 ? 1 : 0));
+  let best = sorted.find((s) => s.isM3U8) || sorted[0];
+  if (!best) throw new Error('Nenhuma fonte de video encontrada');
+
+  for (const src of sorted) {
+    if (await validateStreamUrl(src.url)) {
+      best = src;
+      break;
+    }
+  }
+
+  const subtitles = normalizeSubtitles(rawSubtitles);
+
+  return {
+    videoUrl: best.url,
+    type: best.isM3U8 || /\.m3u8/i.test(best.url) ? 'hls' : 'mp4',
+    quality: best.quality || 'default',
+    qualities: sources.map((s) => ({ url: s.url, label: s.quality || 'default' })),
+    subtitles,
+    audioMode: streamMeta.audioMode || 'legendado',
+    subtitleLang: streamMeta.subtitleLang || null,
+    embeddedSubtitles: streamMeta.embeddedSubtitles || false,
+    subtitleLangLabel: subtitleLangLabel(streamMeta.subtitleLang),
+  };
+}
+
+async function getEpisodeStream(episodeRef) {
+  const decoded = decodeRef(episodeRef);
+  if (!decoded) throw new Error('Episodio invalido');
+
+  const stream = await fetchEpisodeStreamFromRef(decoded);
+  return {
+    ...stream,
+    goanime: {
+      available: true,
+      path: 'cloud',
+      version: `unity-${decoded.provider.toLowerCase()}`,
+    },
+  };
+}
+
+function goanimeAvailable() {
+  return true;
+}
+
+module.exports = {
+  goanimeAvailable,
+  searchAnimeFire,
+  searchAnimeFireMulti,
+  findBestMatch,
+  getEpisodes,
+  getEpisodeStream,
+  getAnimeFromSource,
+  titleSimilarity,
+  buildSearchQueries,
+  decodeRef,
+  encodeRef,
+};
