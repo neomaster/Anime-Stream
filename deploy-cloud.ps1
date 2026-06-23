@@ -1,7 +1,7 @@
 # Publica o Anime Stream na nuvem (Render ou Railway) e atualiza o APK
 param(
   [ValidateSet('render', 'railway', 'auto')]
-  [string]$Provider = 'auto',
+  [string]$Provider = 'render',
   [string]$CloudUrl = '',
   [switch]$SkipApk,
   [switch]$SkipDeploy
@@ -92,8 +92,9 @@ function Show-RenderInstructions {
   Write-Host "=== Deploy Render (gratuito) ===" -ForegroundColor Cyan
   Write-Host ""
   Write-Host "1. Crie conta em https://render.com (gratis)" -ForegroundColor White
-  Write-Host "2. Dashboard > New + > Blueprint" -ForegroundColor White
-  Write-Host "3. Conecte este repositorio Git OU use 'Web Service':" -ForegroundColor White
+  Write-Host "2. Faca push do codigo: gh auth login && gh repo create neomaster/anime-stream-magnet --public --push" -ForegroundColor White
+  Write-Host "3. Dashboard > New + > Blueprint > conecte github.com/neomaster/anime-stream-magnet" -ForegroundColor White
+  Write-Host "   (ou Web Service manual:)" -ForegroundColor DarkGray
   Write-Host "   - Build:  npm ci --omit=dev" -ForegroundColor DarkGray
   Write-Host "   - Start:  node server.js" -ForegroundColor DarkGray
   Write-Host "   - Health: /api/health" -ForegroundColor DarkGray
@@ -121,20 +122,19 @@ Write-Host "=== Anime Stream - Deploy Nuvem ===" -ForegroundColor Cyan
 
 if (-not $SkipDeploy) {
   $deployedUrl = $null
-  if ($Provider -in @('railway', 'auto')) {
+  if ($Provider -eq 'railway') {
     try {
       $deployedUrl = Deploy-Railway
     } catch {
       Write-Host "Railway: $($_.Exception.Message)" -ForegroundColor Yellow
-      if ($Provider -eq 'railway') { throw }
+      throw
     }
-  }
-
-  if (-not $deployedUrl) {
+  } else {
     Show-RenderInstructions
     if (-not (Read-CloudUrl)) {
       Write-Host ""
       Write-Host "Nenhuma URL na nuvem configurada ainda." -ForegroundColor Yellow
+      Write-Host "Repositorio GitHub: https://github.com/neomaster/anime-stream-magnet" -ForegroundColor Cyan
       exit 1
     }
   }
