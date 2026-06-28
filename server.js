@@ -77,6 +77,12 @@ app.get('/api/health', (req, res) => {
     goanime: streaming.goanimeAvailable(),
     altSources: config.ALT_SOURCES_ENABLED,
     altProvider: config.ALT_SOURCES_ENABLED ? altPublic.PUBLIC_PROVIDER : null,
+    sources: {
+      animefire: config.ANIMEFIRE_BASE,
+      nyaa: config.NYAA_BASE,
+      nyaaMirrors: config.NYAA_MIRRORS,
+      nyaaRss: true,
+    },
   });
 });
 
