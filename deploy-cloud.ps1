@@ -99,7 +99,7 @@ function Show-RenderInstructions {
   Write-Host "   - Start:  node server.js" -ForegroundColor DarkGray
   Write-Host "   - Health: /api/health" -ForegroundColor DarkGray
   Write-Host "   - Env:    CLOUD_MODE=true" -ForegroundColor DarkGray
-  Write-Host "4. Apos deploy, copie a URL (ex: https://anime-stream.onrender.com)" -ForegroundColor White
+  Write-Host "4. Apos deploy, copie a URL (ex: https://anime-stream-a8nb.onrender.com)" -ForegroundColor White
   Write-Host "5. Execute:" -ForegroundColor White
   Write-Host "   npm run deploy:cloud -- -CloudUrl https://SUA-URL.onrender.com -SkipDeploy" -ForegroundColor Yellow
   Write-Host ""
