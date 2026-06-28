@@ -13,6 +13,7 @@
     "deploy:cloud": "node scripts/deploy-cloud.js",
     "deploy:render": "node scripts/deploy-cloud.js",
     "publish:github": "git push -u origin main",
+    "probe:health": "node scripts/probe-health.js",
     "build:config": "node scripts/write-build-config.js",
     "build:apk": "node scripts/build-apk.js",
     "dev": "node --watch server.js",

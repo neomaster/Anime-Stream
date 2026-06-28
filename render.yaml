@@ -1,4 +1,5 @@
-# Blueprint Render — conecte este repositório GitHub em dashboard.render.com/blueprints
+# Blueprint Render — neomaster/Anime-Stream
+# Blueprint ID: exs-d90mma6rnols73eroggg
 services:
   - type: web
     name: anime-stream
