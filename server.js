@@ -93,6 +93,39 @@ app.get('/api/info', (_req, res) => {
   });
 });
 
+app.get('/api/debug/probe', async (_req, res) => {
+  const goanime = require('./services/goanime');
+  const consumet = require('./services/consumet-stream');
+  const out = { cloud: config.CLOUD_MODE, ts: Date.now() };
+
+  async function timed(label, fn) {
+    const t0 = Date.now();
+    try {
+      const value = await fn();
+      out[label] = { ok: true, ms: Date.now() - t0, value };
+    } catch (err) {
+      out[label] = { ok: false, ms: Date.now() - t0, error: err.message };
+    }
+  }
+
+  await timed('animefireSearch', async () => {
+    const r = await goanime.searchAnimeFire('frieren');
+    return r.length;
+  });
+  await timed('saturnSearch', async () => {
+    const r = await consumet.searchAnimeFire('steel ball run');
+    return r.map((x) => ({ name: x.name, source: x.source }));
+  });
+  await timed('matchFrieren', async () => {
+    const m = await streaming.findBestMatch('Sousou no Frieren', [
+      "Frieren: Beyond Journey's End",
+    ]);
+    return m ? { name: m.name, url: String(m.url).slice(0, 80) } : null;
+  });
+
+  res.json(out);
+});
+
 app.get('/api/search', async (req, res) => {
   try {
     const q = (req.query.q || '').trim();
