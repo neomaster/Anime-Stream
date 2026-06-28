@@ -36,11 +36,24 @@ async function findBestMatchWithEpisodes(provider, jikanTitle, alternatives, opt
 }
 
 async function cloudFindBestMatch(jikanTitle, alternatives = [], options = {}) {
-  // Consumet (AnimeSaturn) é mais confiável em datacenters; AnimeFire costuma bloquear IPs de nuvem.
-  const saturnMatch = await findBestMatchWithEpisodes(consumet, jikanTitle, alternatives, options);
-  if (saturnMatch) return saturnMatch;
+  // Saturn/Unity (consumet) e AnimeFire em paralelo — datacenters podem bloquear um dos lados.
+  const [consumetSettled, fireSettled] = await Promise.allSettled([
+    findBestMatchWithEpisodes(consumet, jikanTitle, alternatives, options),
+    findBestMatchWithEpisodes(goanime, jikanTitle, alternatives, options),
+  ]);
 
-  return findBestMatchWithEpisodes(goanime, jikanTitle, alternatives, options);
+  const consumetMatch = consumetSettled.status === 'fulfilled' ? consumetSettled.value : null;
+  const fireMatch = fireSettled.status === 'fulfilled' ? fireSettled.value : null;
+
+  if (consumetMatch && fireMatch) {
+    const cSaturn = String(consumetMatch.url || '').includes('AnimeSaturn');
+    const fSaturn = String(fireMatch.url || '').includes('AnimeSaturn');
+    if (cSaturn && !fSaturn) return consumetMatch;
+    if (fSaturn && !cSaturn) return fireMatch;
+    return consumetMatch;
+  }
+
+  return consumetMatch || fireMatch || null;
 }
 
 async function cloudSearchAnimeFireMulti(queries) {

@@ -278,6 +278,16 @@ function renderDetailCommon({ title, synopsis, poster, source, episodes }) {
   updateContinueBtn();
 }
 
+function renderAnimeMeta(anime) {
+  $('#detailMeta').innerHTML = `
+    ${anime.score ? `<span>★ ${anime.score}</span>` : ''}
+    ${anime.type ? `<span>${anime.type}</span>` : ''}
+    ${anime.episodes ? `<span>${anime.episodes} eps</span>` : ''}
+    ${anime.status ? `<span>${anime.status}</span>` : ''}
+    <div>${(anime.genres || []).map((g) => `<span class="tag">${escapeHtml(g)}</span>`).join('')}</div>
+  `;
+}
+
 async function openAnime(malId) {
   showSection('detail');
   window.scrollTo(0, 0);
@@ -285,32 +295,47 @@ async function openAnime(malId) {
   history.replaceState(null, '', `?anime=${malId}`);
 
   $('#detailTitle').textContent = 'Carregando...';
-  $('#detailSynopsis').textContent = 'Buscando episódios nas fontes de streaming…';
+  $('#detailSynopsis').textContent = 'Buscando informações do anime…';
   $('#sourceBadge').textContent = '⏳ Consultando fontes…';
   $('#episodesGrid').innerHTML = '<p class="ep-empty">Carregando episódios…</p>';
-  try {
-    const data = await api(`/api/anime/${malId}?audio=${encodeURIComponent(Subtitles.getAudioPref())}`);
-    state.currentAnime = data.anime;
-    setAnimeKey(malId, null, data.anime.title, data.anime.poster);
 
-    const anime = data.anime;
-    $('#detailMeta').innerHTML = `
-      ${anime.score ? `<span>★ ${anime.score}</span>` : ''}
-      ${anime.type ? `<span>${anime.type}</span>` : ''}
-      ${anime.episodes ? `<span>${anime.episodes} eps</span>` : ''}
-      ${anime.status ? `<span>${anime.status}</span>` : ''}
-      <div>${(anime.genres || []).map((g) => `<span class="tag">${escapeHtml(g)}</span>`).join('')}</div>
-    `;
+  const audio = encodeURIComponent(Subtitles.getAudioPref());
+  const streamPath = `/api/anime/${malId}/episodes?audio=${audio}`;
+
+  try {
+    const streamPromise = api(streamPath, { timeoutMs: 90000 }).catch((err) => ({ error: err }));
+
+    const meta = await api(`/api/anime/${malId}/meta`, { timeoutMs: 20000 });
+    const anime = meta.anime;
+    state.currentAnime = anime;
+    setAnimeKey(malId, null, anime.title, anime.poster);
+    renderAnimeMeta(anime);
+    renderDetailCommon({
+      title: anime.title,
+      synopsis: anime.synopsis,
+      poster: anime.poster,
+      source: null,
+      episodes: [],
+    });
+    $('#detailSynopsis').textContent = 'Buscando episódios nas fontes de streaming…';
+
+    const stream = await streamPromise;
+    if (stream?.error) throw stream.error;
 
     renderDetailCommon({
       title: anime.title,
       synopsis: anime.synopsis,
       poster: anime.poster,
-      source: data.source,
-      episodes: data.episodes,
+      source: stream.source,
+      episodes: stream.episodes,
     });
-
   } catch (err) {
+    if (state.currentAnime) {
+      $('#sourceBadge').textContent = '⚠ Não encontrado nas fontes de streaming';
+      $('#episodesGrid').innerHTML = '<p class="ep-empty">Nenhum episódio encontrado nas fontes disponíveis.</p>';
+      showToast(err.message || 'Episódios indisponíveis no momento.', true);
+      return;
+    }
     $('#detailTitle').textContent = 'Erro';
     $('#detailSynopsis').textContent = err.message;
     showToast(err.message, true);

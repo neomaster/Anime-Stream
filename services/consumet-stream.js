@@ -6,6 +6,7 @@ const {
 } = require('./matcher');
 const { normalizeSubtitles, subtitleLangLabel } = require('./subtitles');
 const unityDirect = require('./animeunity-direct');
+const saturnDirect = require('./anime-saturn-direct');
 const config = require('../config');
 
 const PROVIDER_NAME = 'AnimeUnity';
@@ -61,7 +62,7 @@ async function searchUnity(query) {
   return items.map(mapSearchResult);
 }
 
-async function searchSaturn(query) {
+async function searchSaturnConsumet(query) {
   const provider = await getSaturnProvider();
   const data = await provider.search(query);
   return (data.results || []).map((item) => ({
@@ -72,23 +73,43 @@ async function searchSaturn(query) {
   }));
 }
 
-async function searchAnimeFire(query) {
+async function searchSaturnDirect(query) {
+  const items = await saturnDirect.search(query);
+  return items.map((item) => ({
+    name: item.title,
+    url: encodeRef('AnimeSaturn', item.id),
+    image: item.image || null,
+    source: 'animesaturn',
+  }));
+}
+
+async function searchSaturn(query) {
   if (useDirectUnity()) {
     try {
-      const saturn = await searchSaturn(query);
-      if (saturn.length) return saturn;
+      const direct = await searchSaturnDirect(query);
+      if (direct.length) return direct;
     } catch (err) {
-      console.warn('[AnimeSaturn]', query, err.message);
+      console.warn('[AnimeSaturn/direct]', query, err.message);
     }
+  }
 
-    try {
-      const unity = await searchUnity(query);
-      if (unity.length) return unity;
-    } catch (err) {
-      console.warn('[AnimeUnity]', query, err.message);
-    }
-
+  try {
+    return await searchSaturnConsumet(query);
+  } catch (err) {
+    console.warn('[AnimeSaturn/consumet]', query, err.message);
     return [];
+  }
+}
+
+async function searchAnimeFire(query) {
+  if (useDirectUnity()) {
+    const [saturnSettled, unitySettled] = await Promise.allSettled([
+      searchSaturn(query),
+      searchUnity(query),
+    ]);
+    const saturn = saturnSettled.status === 'fulfilled' ? saturnSettled.value : [];
+    const unity = unitySettled.status === 'fulfilled' ? unitySettled.value : [];
+    return [...saturn, ...unity];
   }
 
   try {
@@ -178,11 +199,24 @@ async function findBestMatch(jikanTitle, alternatives = [], options = {}) {
   return null;
 }
 
+async function fetchSaturnAnimeInfo(animeId) {
+  if (useDirectUnity()) {
+    try {
+      const info = await saturnDirect.fetchAnimeInfo(animeId);
+      if (info.episodes?.length) return info;
+    } catch (err) {
+      console.warn('[AnimeSaturn/direct info]', animeId, err.message);
+    }
+  }
+
+  const provider = await getSaturnProvider();
+  return provider.fetchAnimeInfo(animeId);
+}
+
 async function fetchAnimeInfoByRef(decoded) {
   if (decoded.provider === 'AnimeSaturn') {
-    const provider = await getSaturnProvider();
     const animeId = decoded.animeId || decoded.id;
-    const info = await provider.fetchAnimeInfo(animeId);
+    const info = await fetchSaturnAnimeInfo(animeId);
     return { providerName: 'AnimeSaturn', info };
   }
 
@@ -236,9 +270,18 @@ async function fetchEpisodeStreamFromRef(decoded) {
   let streamMeta = {};
 
   if (decoded.provider === 'AnimeSaturn') {
-    const provider = await getSaturnProvider();
-    const data = await provider.fetchEpisodeSources(decoded.id);
-    sources = data.sources || [];
+    try {
+      if (useDirectUnity()) {
+        const data = await saturnDirect.fetchEpisodeSources(decoded.id);
+        sources = data.sources || [];
+      } else {
+        throw new Error('fallback');
+      }
+    } catch {
+      const provider = await getSaturnProvider();
+      const data = await provider.fetchEpisodeSources(decoded.id);
+      sources = data.sources || [];
+    }
   } else if (decoded.provider === PROVIDER_NAME) {
     const data = await unityDirect.fetchEpisodeSources(decoded.id);
     sources = data.sources || [];
@@ -258,10 +301,12 @@ async function fetchEpisodeStreamFromRef(decoded) {
   let best = sorted.find((s) => s.isM3U8) || sorted[0];
   if (!best) throw new Error('Nenhuma fonte de video encontrada');
 
-  for (const src of sorted) {
-    if (await validateStreamUrl(src.url)) {
-      best = src;
-      break;
+  if (!config.CLOUD_MODE) {
+    for (const src of sorted) {
+      if (await validateStreamUrl(src.url)) {
+        best = src;
+        break;
+      }
     }
   }
 

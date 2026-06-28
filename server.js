@@ -39,8 +39,6 @@ app.get('/client-config.js', (req, res) => {
   );
 });
 
-app.use(express.static(path.join(__dirname, 'public')));
-
 function getLanIPs() {
   const ips = [];
   for (const [name, iface] of Object.entries(os.networkInterfaces())) {
@@ -115,6 +113,11 @@ app.get('/api/debug/probe', async (_req, res) => {
   await timed('saturnSearch', async () => {
     const r = await consumet.searchAnimeFire('steel ball run');
     return r.map((x) => ({ name: x.name, source: x.source }));
+  });
+  await timed('saturnDirect', async () => {
+    const saturnDirect = require('./services/anime-saturn-direct');
+    const r = await saturnDirect.search('steel ball run');
+    return r.map((x) => x.title);
   });
   await timed('matchFrieren', async () => {
     const m = await streaming.findBestMatch('Sousou no Frieren', [
@@ -200,6 +203,25 @@ app.get('/api/top', async (_req, res) => {
     res.json(data);
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/anime/:malId/meta', async (req, res) => {
+  try {
+    const malId = parseInt(req.params.malId, 10);
+    const cacheKey = `anime-${malId}`;
+    const cachedMeta = cache.get(cacheKey);
+    let anime = cachedMeta?.anime;
+    if (!anime) {
+      anime = await jikan.getAnimeById(malId);
+      cache.set(cacheKey, { anime }, 30 * 60 * 1000);
+    }
+    res.json({ anime });
+  } catch (err) {
+    res.status(503).json({
+      error: 'Informações temporariamente indisponíveis. Tente novamente em instantes.',
+      detail: err.message,
+    });
   }
 });
 
@@ -555,6 +577,8 @@ app.post('/api/alt/open', async (req, res) => {
     );
   }
 });
+
+app.use(express.static(path.join(__dirname, 'public')));
 
 app.get('*', (_req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));

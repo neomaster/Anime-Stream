@@ -21,5 +21,9 @@ services:
         value: https://nyaa.one
       - key: ANIMEFIRE_BASE
         value: https://animefire.io
+      - key: ANIMEUNITY_BASE
+        value: https://www.animeunity.to
+      - key: ANIME_SATURN_BASE
+        value: https://www.animesaturn.cx
       - key: VAULT_SECRET
         generateValue: true
