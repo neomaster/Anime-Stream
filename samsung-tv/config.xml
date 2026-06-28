@@ -9,8 +9,8 @@
     <feature name="http://tizen.org/feature/screen.size.normal.1080.1920"/>
     <feature name="http://tizen.org/feature/network.internet"/>
     <icon src="icon.png"/>
-    <name>New Era</name>
-    <description>Assista animes via servidor New Era</description>
+    <name>Anime Stream</name>
+    <description>Assista animes via servidor Anime Stream</description>
     <author href="https://github.com/alvarorichard/GoAnime" email="local@anime-stream">Neomaster</author>
     <license href="https://opensource.org/licenses/MIT">MIT</license>
     <tizen:privilege name="http://tizen.org/privilege/internet"/>

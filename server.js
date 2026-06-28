@@ -85,7 +85,7 @@ app.get('/api/health', (req, res) => {
 app.get('/api/info', (_req, res) => {
   const ips = getLanIPs();
   res.json({
-    name: 'New Era',
+    name: 'Anime Stream',
     version: pkg.version,
     port: config.PORT,
     ips,
@@ -529,7 +529,7 @@ app.get('*', (_req, res) => {
 
 app.listen(config.PORT, '0.0.0.0', () => {
   const localIPs = getLanIPs();
-  console.log(`\n  New Era v${pkg.version}`);
+  console.log(`\n  Anime Stream v${pkg.version}`);
   if (config.CLOUD_MODE) {
     console.log(`  Nuvem:     porta ${config.PORT} (CLOUD_MODE)`);
   } else {

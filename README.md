@@ -203,9 +203,9 @@ npm run build:apk
 | Render (hook) | `npm run deploy:render -- --hook=<RENDER_DEPLOY_HOOK_URL>` |
 | Docker | Node 20 Alpine, porta 10000 |
 
-1. Faça push para `github.com/neomaster/anime-stream-magnet`
+1. Faça push para `github.com/neomaster/Anime-Stream`
 2. Em [dashboard.render.com/blueprints](https://dashboard.render.com/blueprints), conecte o repositório
-3. Após o deploy, atualize a URL: `npm run deploy:cloud -- --url=https://new-era.onrender.com`
+3. Após o deploy, atualize a URL: `npm run deploy:cloud -- --url=https://anime-stream.onrender.com`
 
 Health: `GET /api/health` → `altSources: true`, `altProvider: "x7f"`
 

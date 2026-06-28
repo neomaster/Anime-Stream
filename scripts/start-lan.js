@@ -25,7 +25,7 @@ function getLanIPs() {
   return (wifi.length ? wifi : unique).sort();
 }
 
-console.log('\n=== New Era — rede local ===\n');
+console.log('\n=== Anime Stream — rede local ===\n');
 const ips = getLanIPs();
 if (ips.length) {
   console.log('Acesse na rede:');

@@ -92,8 +92,8 @@ function Show-RenderInstructions {
   Write-Host "=== Deploy Render (gratuito) ===" -ForegroundColor Cyan
   Write-Host ""
   Write-Host "1. Crie conta em https://render.com (gratis)" -ForegroundColor White
-  Write-Host "2. Faca push do codigo: gh auth login && gh repo create neomaster/anime-stream-magnet --public --push" -ForegroundColor White
-  Write-Host "3. Dashboard > New + > Blueprint > conecte github.com/neomaster/anime-stream-magnet" -ForegroundColor White
+  Write-Host "2. Faca push do codigo: gh auth login && npm run publish:github" -ForegroundColor White
+  Write-Host "3. Dashboard > New + > Blueprint > conecte github.com/neomaster/Anime-Stream" -ForegroundColor White
   Write-Host "   (ou Web Service manual:)" -ForegroundColor DarkGray
   Write-Host "   - Build:  npm ci --omit=dev" -ForegroundColor DarkGray
   Write-Host "   - Start:  node server.js" -ForegroundColor DarkGray
@@ -134,7 +134,7 @@ if (-not $SkipDeploy) {
     if (-not (Read-CloudUrl)) {
       Write-Host ""
       Write-Host "Nenhuma URL na nuvem configurada ainda." -ForegroundColor Yellow
-      Write-Host "Repositorio GitHub: https://github.com/neomaster/anime-stream-magnet" -ForegroundColor Cyan
+      Write-Host "Repositorio GitHub: https://github.com/neomaster/Anime-Stream" -ForegroundColor Cyan
       exit 1
     }
   }

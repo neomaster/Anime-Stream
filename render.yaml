@@ -1,7 +1,7 @@
 # Blueprint Render — conecte este repositório GitHub em dashboard.render.com/blueprints
 services:
   - type: web
-    name: new-era
+    name: anime-stream
     runtime: node
     plan: free
     buildCommand: npm ci --omit=dev
