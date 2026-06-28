@@ -42,16 +42,27 @@ const {
 } = matcher;
 const { normalizeSubtitles } = require('./subtitles');
 
-async function fetchPage(url) {
+async function fetchPage(url, attempt = 0) {
   const res = await fetch(url, {
     headers: {
       'User-Agent': config.USER_AGENT,
       Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
       'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
       Referer: `${config.ANIMEFIRE_BASE}/`,
+      Origin: config.ANIMEFIRE_BASE,
       'Cache-Control': 'no-cache',
+      'Upgrade-Insecure-Requests': '1',
+      'Sec-Fetch-Dest': 'document',
+      'Sec-Fetch-Mode': 'navigate',
+      'Sec-Fetch-Site': 'same-origin',
     },
+    timeout: 45000,
   });
+
+  if ((res.status === 403 || res.status === 429) && attempt < 2) {
+    await new Promise((r) => setTimeout(r, 700 * (attempt + 1)));
+    return fetchPage(url, attempt + 1);
+  }
 
   if (!res.ok) {
     throw new Error(`AnimeFire HTTP ${res.status}`);
@@ -191,47 +202,78 @@ function detectType(url) {
   return 'stream';
 }
 
-async function searchAnimeFire(query) {
-  const normalized = normalizeQuery(query);
-  if (!normalized) return [];
+function parseAnimeFireSearchHtml(html) {
+  const $ = cheerio.load(html);
+  const results = [];
+  const seen = new Set();
 
-  const url = `${config.ANIMEFIRE_BASE}/pesquisar/${encodeURIComponent(normalized)}`;
-  let html;
+  const push = (name, href, image) => {
+    const clean = cleanAnimeName(name);
+    if (!clean || !href || seen.has(href)) return;
+    seen.add(href);
+    results.push({
+      name: clean,
+      url: resolveUrl(config.ANIMEFIRE_BASE, href),
+      image: image ? resolveUrl(config.ANIMEFIRE_BASE, image) : null,
+      source: 'animefire',
+    });
+  };
+
+  $('.row.ml-1.mr-1 a').each((_, el) => {
+    push($(el).text().trim(), $(el).attr('href'));
+  });
+
+  $('.card_ani').each((_, el) => {
+    push(
+      $(el).find('.ani_name a').text().trim(),
+      $(el).find('.ani_name a').attr('href'),
+      $(el).find('.div_img img').attr('src')
+    );
+  });
+
+  $('a[href*="/animes/"]').each((_, el) => {
+    const href = $(el).attr('href');
+    const name = $(el).text().trim() || $(el).attr('title') || '';
+    if (href && name.length > 2) push(name, href);
+  });
+
+  return results;
+}
+
+async function searchAnimeFireSlug(slug) {
+  if (!slug) return [];
+  const url = `${config.ANIMEFIRE_BASE}/pesquisar/${encodeURIComponent(slug)}`;
   try {
-    html = await fetchPage(url);
+    const html = await fetchPage(url);
+    return parseAnimeFireSearchHtml(html);
   } catch (err) {
     if (/AnimeFire HTTP (404|429)/i.test(err.message)) return [];
     throw err;
   }
-  const $ = cheerio.load(html);
-  const results = [];
+}
 
-  $('.row.ml-1.mr-1 a').each((_, el) => {
-    const href = $(el).attr('href');
-    const rawName = $(el).text().trim();
-    const name = cleanAnimeName(rawName);
-    if (href && name) {
-      results.push({ name, url: resolveUrl(config.ANIMEFIRE_BASE, href), source: 'animefire' });
-    }
-  });
+async function searchAnimeFire(query) {
+  const raw = String(query || '').toLowerCase().trim();
+  const slug = normalizeQuery(query);
+  const attempts = [...new Set([slug, raw.replace(/\s+/g, '-'), raw.replace(/\s+/g, '+')])].filter(
+    (q) => q && q.length >= 2
+  );
 
-  if (!results.length) {
-    $('.card_ani').each((_, el) => {
-      const title = cleanAnimeName($(el).find('.ani_name a').text().trim());
-      const href = $(el).find('.ani_name a').attr('href');
-      const img = $(el).find('.div_img img').attr('src');
-      if (title && href) {
-        results.push({
-          name: title,
-          url: resolveUrl(config.ANIMEFIRE_BASE, href),
-          image: img ? resolveUrl(config.ANIMEFIRE_BASE, img) : null,
-          source: 'animefire',
-        });
+  const seen = new Set();
+  const merged = [];
+
+  for (const attempt of attempts) {
+    const batch = await searchAnimeFireSlug(attempt);
+    for (const item of batch) {
+      if (!seen.has(item.url)) {
+        seen.add(item.url);
+        merged.push(item);
       }
-    });
+    }
+    if (merged.length >= 8) break;
   }
 
-  return results;
+  return merged;
 }
 
 async function getEpisodes(animeUrl) {

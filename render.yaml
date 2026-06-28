@@ -18,7 +18,9 @@ services:
       - key: NYAA_ENABLED
         value: "true"
       - key: NYAA_BASE
-        value: https://nyaa.one
+        value: https://nyaa.si
+      - key: NYAA_MIRRORS
+        value: https://nyaa.si,https://nyaa.one
       - key: ANIMEFIRE_BASE
         value: https://animefire.io
       - key: ANIMEUNITY_BASE

@@ -2,16 +2,28 @@ const fetch = require('node-fetch');
 const cheerio = require('cheerio');
 const config = require('../config');
 
-const DEFAULT_BASE = 'https://nyaa.one';
+const DEFAULT_MIRRORS = ['https://nyaa.si', 'https://nyaa.one'];
 const BLOCK_RE =
   /\b(xxx|porn|jav|fetish|onlyfans|fansly|hentai|nsfw|affair|milf|stepdad|bbc|nude|erotic)\b/i;
 
+function getMirrors() {
+  const primary = String(config.NYAA_BASE || process.env.NYAA_BASE || DEFAULT_MIRRORS[0]).replace(
+    /\/+$/,
+    ''
+  );
+  const extra = String(process.env.NYAA_MIRRORS || '')
+    .split(',')
+    .map((s) => s.trim().replace(/\/+$/, ''))
+    .filter(Boolean);
+  return [...new Set([primary, ...DEFAULT_MIRRORS, ...extra])];
+}
+
 function getBase() {
-  return String(config.NYAA_BASE || process.env.NYAA_BASE || DEFAULT_BASE).replace(/\/+$/, '');
+  return getMirrors()[0];
 }
 
 function buildSearchUrl(query, options = {}) {
-  const base = getBase();
+  const base = (options.base || getBase()).replace(/\/+$/, '');
   const params = new URLSearchParams();
   params.set('f', String(options.filter ?? 0));
   params.set('c', String(options.category ?? '1_0'));
@@ -31,8 +43,7 @@ function normalizeRow(row) {
   const seeds = parseInt(row.seeds, 10) || 0;
   const leeches = parseInt(row.leeches, 10) || 0;
   const magnet =
-    row.magnet ||
-    (row.infoHash ? buildMagnet(row.infoHash, row.name) : null);
+    row.magnet || (row.infoHash ? buildMagnet(row.infoHash, row.name) : null);
 
   return {
     name: row.name,
@@ -43,7 +54,7 @@ function normalizeRow(row) {
     date: row.date || '',
     magnet,
     infoHash: row.infoHash || null,
-    mirrorBase: getBase(),
+    mirrorBase: row.mirrorBase || getBase(),
     provider: 'nya',
   };
 }
@@ -68,7 +79,7 @@ async function fetchContent(url, accept) {
   return res.text();
 }
 
-function parseSearchHtml(html) {
+function parseSearchHtml(html, mirrorBase) {
   const $ = cheerio.load(html);
   const rows = [];
 
@@ -91,12 +102,16 @@ function parseSearchHtml(html) {
 
     const normalized = normalizeRow({
       name,
-      href: href && !href.startsWith('http') ? `${getBase()}${href.startsWith('/') ? '' : '/'}${href}` : href,
+      href:
+        href && !href.startsWith('http')
+          ? `${mirrorBase}${href.startsWith('/') ? '' : '/'}${href}`
+          : href,
       magnet,
       seeds,
       leeches,
       size,
       date,
+      mirrorBase,
     });
     if (normalized) rows.push(normalized);
   });
@@ -116,7 +131,7 @@ function extractXmlTag(block, tag) {
     .trim();
 }
 
-function parseSearchRss(xml) {
+function parseSearchRss(xml, mirrorBase) {
   const rows = [];
   const blocks = xml.split(/<item>/i).slice(1);
 
@@ -138,6 +153,7 @@ function parseSearchRss(xml) {
       leeches,
       size,
       date: pubDate,
+      mirrorBase,
     });
     if (normalized) rows.push(normalized);
   }
@@ -145,35 +161,46 @@ function parseSearchRss(xml) {
   return rows;
 }
 
+function ingestRows(rows, seen, merged, limit) {
+  for (const row of rows) {
+    const key = row.magnet || row.href || row.name;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    merged.push(row);
+    if (merged.length >= limit) return true;
+  }
+  return false;
+}
+
+async function searchQueryOnMirror(query, mirrorBase, seen, merged, limit) {
+  const rssUrl = buildSearchUrl(query, { base: mirrorBase, category: '1_0', filter: 0, rss: true });
+  try {
+    const xml = await fetchContent(
+      rssUrl,
+      'application/rss+xml, application/xml, text/xml, */*'
+    );
+    if (ingestRows(parseSearchRss(xml, mirrorBase), seen, merged, limit)) return true;
+  } catch {
+    /* tenta HTML */
+  }
+
+  const htmlUrl = buildSearchUrl(query, { base: mirrorBase, category: '1_0', filter: 0 });
+  try {
+    const html = await fetchContent(htmlUrl, 'text/html,application/xhtml+xml');
+    if (ingestRows(parseSearchHtml(html, mirrorBase), seen, merged, limit)) return true;
+  } catch {
+    /* próximo mirror */
+  }
+
+  return merged.length >= limit;
+}
+
 async function searchQuery(query, seen, merged, limit) {
   if (!query || query.length < 2) return false;
 
-  const htmlUrl = buildSearchUrl(query, { category: '1_0', filter: 0 });
-  try {
-    const html = await fetchContent(htmlUrl, 'text/html,application/xhtml+xml');
-    for (const row of parseSearchHtml(html)) {
-      const key = row.magnet || row.href || row.name;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      merged.push(row);
-      if (merged.length >= limit) return true;
-    }
-  } catch {
-    /* tenta RSS */
-  }
-
-  const rssUrl = buildSearchUrl(query, { category: '1_0', filter: 0, rss: true });
-  try {
-    const xml = await fetchContent(rssUrl, 'application/rss+xml, application/xml, text/xml');
-    for (const row of parseSearchRss(xml)) {
-      const key = row.magnet || row.href || row.name;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      merged.push(row);
-      if (merged.length >= limit) return true;
-    }
-  } catch {
-    /* próxima query */
+  for (const mirror of getMirrors()) {
+    const done = await searchQueryOnMirror(query, mirror, seen, merged, limit);
+    if (done) return true;
   }
 
   return merged.length >= limit;
@@ -182,11 +209,20 @@ async function searchQuery(query, seen, merged, limit) {
 async function searchIndex(queries, limit = 20) {
   const seen = new Set();
   const merged = [];
-  const target = Math.max(limit * 3, 24);
+  const target = Math.max(limit * 3, 30);
 
-  for (const q of queries) {
-    await searchQuery(q, seen, merged, target);
-    if (merged.length >= target) break;
+  const list = Array.isArray(queries) ? queries : [queries];
+  await Promise.all(
+    list.slice(0, 6).map(async (q) => {
+      await searchQuery(q, seen, merged, target);
+    })
+  );
+
+  if (!merged.length) {
+    for (const q of list) {
+      await searchQuery(q, seen, merged, target);
+      if (merged.length >= target) break;
+    }
   }
 
   if (!merged.length) {
@@ -196,12 +232,16 @@ async function searchIndex(queries, limit = 20) {
     throw err;
   }
 
-  return merged.slice(0, limit * 2);
+  return merged
+    .sort((a, b) => (b.seeds || 0) - (a.seeds || 0))
+    .slice(0, limit * 2);
 }
 
 module.exports = {
   searchIndex,
   getBase,
+  getMirrors,
   buildMagnet,
+  buildSearchUrl,
   BLOCK_RE,
 };

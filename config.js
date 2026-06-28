@@ -13,7 +13,8 @@ module.exports = {
   ANIMEFIRE_BASE: process.env.ANIMEFIRE_BASE || 'https://animefire.io',
   ALT_SOURCES_ENABLED: process.env.ALT_SOURCES !== 'false',
   NYAA_ENABLED: process.env.NYAA_ENABLED !== 'false',
-  NYAA_BASE: (process.env.NYAA_BASE || 'https://nyaa.one').replace(/\/+$/, ''),
+  NYAA_BASE: (process.env.NYAA_BASE || 'https://nyaa.si').replace(/\/+$/, ''),
+  NYAA_MIRRORS: process.env.NYAA_MIRRORS || 'https://nyaa.si,https://nyaa.one',
   X1337_MIRRORS:
     process.env.X1337_MIRRORS || 'https://www.1377x.to,https://www.1337x.st,https://1337x.gd',
   USER_AGENT:

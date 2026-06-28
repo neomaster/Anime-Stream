@@ -108,7 +108,12 @@ app.get('/api/debug/probe', async (_req, res) => {
 
   await timed('animefireSearch', async () => {
     const r = await goanime.searchAnimeFire('frieren');
-    return r.length;
+    return { count: r.length, base: config.ANIMEFIRE_BASE, sample: r[0]?.name || null };
+  });
+  await timed('nyaaRss', async () => {
+    const nyaa = require('./services/nyaa');
+    const rows = await nyaa.searchIndex(['Sousou no Frieren'], 5);
+    return { base: nyaa.getBase(), count: rows.length, sample: rows[0]?.name || null };
   });
   await timed('saturnSearch', async () => {
     const r = await consumet.searchAnimeFire('steel ball run');

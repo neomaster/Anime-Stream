@@ -175,8 +175,17 @@ async function readCandidateMalId(animeRef) {
   }
 }
 
+async function getEpisodesForCandidate(candidate) {
+  const isConsumet = String(candidate.url || '').startsWith(EP_PREFIX);
+  if (!isConsumet || candidate.source === 'animefire') {
+    const goanime = require('./goanime');
+    return goanime.getEpisodes(candidate.url);
+  }
+  return getEpisodes(candidate.url);
+}
+
 async function tryCandidate(candidate, options) {
-  const eps = await getEpisodes(candidate.url);
+  const eps = await getEpisodesForCandidate(candidate);
   if (!eps.length) return null;
 
   const validation = await validateSourceCandidate(
@@ -201,6 +210,10 @@ async function tryCandidate(candidate, options) {
     return candidate;
   }
 
+  if (candidate.source === 'animefire') {
+    return candidate;
+  }
+
   if (candidate.url.includes('AnimeUnity')) {
     if (config.CLOUD_MODE) return candidate;
     const stream = await fetchEpisodeStreamFromRef(decodeRef(eps[0].url));
@@ -211,32 +224,41 @@ async function tryCandidate(candidate, options) {
   return candidate;
 }
 
-async function findBestMatch(jikanTitle, alternatives = [], options = {}) {
+async function matchFromResults(results, jikanTitle, alternatives = [], options = {}) {
   const titles = [jikanTitle, ...alternatives].filter(Boolean);
   const matchOptions = {
     ...options,
     jikanTitle,
     altTitles: alternatives,
   };
-  const queries = buildPrioritizedQueries(titles);
-  let results = await searchAnimeFireMulti(queries);
 
-  if (!results.length && queries.length) {
-    const fallback = queries.slice(0, 3);
-    const lists = await Promise.all(fallback.map((q) => searchAnimeFire(q).catch(() => [])));
-    results = mergeSearchResults(lists, 16);
-  }
-
-  if (!results.length) return null;
+  if (!results?.length) return null;
 
   let ranked = rankCandidates(results, titles, jikanTitle, matchOptions);
   if (config.CLOUD_MODE) {
-    const saturn = ranked.filter((c) => c.source === 'animesaturn');
-    const rest = ranked.filter((c) => c.source !== 'animesaturn');
-    ranked = [...saturn, ...rest];
+    const audioPref = matchOptions.audioPref === 'dublado' ? 'dublado' : 'legendado';
+    ranked = ranked
+      .map((c) => {
+        let bonus = 0;
+        const ref = `${c.url || ''} ${c.name || ''}`.toLowerCase();
+        const isDub = /dublado|dub\b|_dub_/.test(ref);
+
+        if (c.source === 'animefire') {
+          if (audioPref === 'dublado' && isDub) bonus += 0.16;
+          else if (audioPref === 'legendado' && !isDub) bonus += 0.14;
+          else if (audioPref === 'legendado' && isDub) bonus -= 0.22;
+        } else if (c.source === 'animesaturn') {
+          bonus += audioPref === 'legendado' && !/sub_ita|_ita\b/i.test(ref) ? 0.08 : 0.04;
+        } else if (c.source === 'animeunity') {
+          bonus += 0.06;
+        }
+
+        return { ...c, matchScore: c.matchScore + bonus };
+      })
+      .sort((a, b) => b.matchScore - a.matchScore);
   }
 
-  const tryLimit = useDirectUnity() ? 8 : 10;
+  const tryLimit = useDirectUnity() ? 10 : 12;
   for (const candidate of ranked.slice(0, tryLimit)) {
     try {
       const match = await tryCandidate(candidate, matchOptions);
@@ -247,6 +269,20 @@ async function findBestMatch(jikanTitle, alternatives = [], options = {}) {
   }
 
   return null;
+}
+
+async function findBestMatch(jikanTitle, alternatives = [], options = {}) {
+  const titles = [jikanTitle, ...alternatives].filter(Boolean);
+  const queries = buildPrioritizedQueries(titles);
+  let results = await searchAnimeFireMulti(queries);
+
+  if (!results.length && queries.length) {
+    const fallback = queries.slice(0, 3);
+    const lists = await Promise.all(fallback.map((q) => searchAnimeFire(q).catch(() => [])));
+    results = mergeSearchResults(lists, 16);
+  }
+
+  return matchFromResults(results, jikanTitle, alternatives, options);
 }
 
 async function fetchSaturnAnimeInfo(animeId) {
@@ -436,6 +472,7 @@ module.exports = {
   searchAnimeFire,
   searchAnimeFireMulti,
   findBestMatch,
+  matchFromResults,
   getEpisodes,
   getEpisodeStream,
   getAnimeFromSource,
