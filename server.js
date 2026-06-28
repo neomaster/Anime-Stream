@@ -125,6 +125,16 @@ app.get('/api/debug/probe', async (_req, res) => {
     ]);
     return m ? { name: m.name, url: String(m.url).slice(0, 80) } : null;
   });
+  await timed('matchYoujitsuS4', async () => {
+    const m = await streaming.findBestMatch(
+      'Youkoso Jitsuryoku Shijou Shugi no Kyoushitsu e 4th Season: 2-nensei-hen 1 Gakki',
+      ['Classroom of the Elite 4th Season: Second Year, First Semester', 'You-jitsu 4th Season'],
+      { malId: 59708 }
+    );
+    if (!m?.url) return null;
+    const eps = await streaming.getEpisodes(m.url).catch(() => []);
+    return { name: m.name, source: m.source, episodes: eps.length };
+  });
 
   res.json(out);
 });

@@ -74,7 +74,61 @@ function isWeakQuery(q) {
   if (key.length < 3) return true;
   if (key.length < 4 && !/\s/.test(key)) return true;
   if (/^[a-z]{2,3}$/.test(key)) return true;
+  if (/^year\s+\d+$/.test(key)) return true;
+  if (/^season\s+\d+(\s+\d+)*$/.test(key)) return true;
+  if (/^\d+(?:st|nd|rd|th)?\s+season(\s+\d+)*$/.test(key)) return true;
+  if (/^nensei\s+hen(\s+gakki)?$/.test(key)) return true;
   return false;
+}
+
+function parseSeasonNumber(text) {
+  const t = cleanAnimeName(text);
+  const numeric = t.match(/(\d+)(?:st|nd|rd|th)\s+season/i);
+  if (numeric) return parseInt(numeric[1], 10);
+
+  const roman = t.match(/\bseason\s+(i{1,3}|iv|v)\b/i) || t.match(/\b(i{1,3}|iv|v)\s+season\b/i);
+  if (roman) {
+    const map = { i: 1, ii: 2, iii: 3, iv: 4, v: 5 };
+    return map[roman[1].toLowerCase()] || null;
+  }
+
+  const meta = extractMeta(t);
+  return meta.season;
+}
+
+function expandFranchiseQueries(raw) {
+  const phrases = [];
+  const t = cleanAnimeName(raw);
+  if (!t) return phrases;
+
+  const lower = t.toLowerCase();
+  const isYoujitsu =
+    /youkoso|you[- ]?jitsu|classroom of the elite|kyoushitsu/i.test(lower);
+  const season = parseSeasonNumber(t);
+
+  if (isYoujitsu && season) {
+    phrases.push({ text: `classroom of the elite ${season}`, weight: 1 });
+    phrases.push({ text: `classroom of the elite season ${season}`, weight: 0.98 });
+    phrases.push({ text: `you jitsu ${season}`, weight: 0.97 });
+    phrases.push({ text: `you-jitsu ${season}`, weight: 0.96 });
+  }
+
+  const nenseiArc = t.match(/(\d+-nensei-hen(?:\s+\d+-gakki)?)/i);
+  if (nenseiArc) {
+    phrases.push({ text: nenseiArc[1].toLowerCase(), weight: 1 });
+    const gakki = t.match(/(\d+-nensei-hen\s+\d+-gakki)/i);
+    if (gakki) phrases.push({ text: gakki[1].toLowerCase(), weight: 1 });
+  }
+
+  const yearSemester = t.match(/(\d+)(?:st|nd|rd|th)?\s+year[,\s]+(\d+)(?:st|nd|rd|th)?\s+semester/i);
+  if (yearSemester && isYoujitsu && season) {
+    phrases.push({
+      text: `classroom of the elite ${season} year ${yearSemester[1]}`,
+      weight: 0.95,
+    });
+  }
+
+  return phrases;
 }
 
 function extractDistinctivePhrases(raw) {
@@ -347,6 +401,10 @@ function buildSearchQueries(titles) {
         add(arcMeta.tokens.slice(0, 3).join(' '), weight - 0.03);
         add(arcMeta.tokens.slice(0, 2).join(' '), weight - 0.05);
       }
+    }
+
+    for (const { text, weight } of expandFranchiseQueries(t)) {
+      add(text, weight);
     }
 
     const arc = stripFranchise(t);
