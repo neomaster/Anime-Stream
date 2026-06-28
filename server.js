@@ -253,7 +253,9 @@ app.get('/api/anime/:malId', async (req, res) => {
       anime.title_japanese,
       ...(anime.synonyms || []),
     ].filter(Boolean);
-    const sourceMatch = await streaming.findBestMatch(anime.title, altTitles, { audioPref }).catch(() => null);
+    const sourceMatch = await streaming
+      .findBestMatch(anime.title, altTitles, { audioPref, malId: anime.mal_id })
+      .catch(() => null);
 
     let episodes = [];
     if (sourceMatch?.url) {
@@ -301,7 +303,10 @@ app.get('/api/anime/:malId/episodes', async (req, res) => {
       ...(anime.synonyms || []),
     ].filter(Boolean);
     const audioPref = req.query.audio === 'dublado' ? 'dublado' : 'legendado';
-    const sourceMatch = await streaming.findBestMatch(anime.title, altTitles, { audioPref });
+    const sourceMatch = await streaming.findBestMatch(anime.title, altTitles, {
+      audioPref,
+      malId: anime.mal_id,
+    });
 
     if (!sourceMatch?.url) {
       return res.json({

@@ -119,28 +119,25 @@ async function searchAnimeFire(query) {
   }
 }
 
-async function searchAnimeFireMulti(queries) {
+function mergeSearchResults(lists, cap = 24) {
   const seen = new Set();
   const merged = [];
-  const limit = config.CLOUD_MODE ? 6 : queries.length;
-
-  for (const q of queries.slice(0, limit)) {
-    const lists = useDirectUnity()
-      ? await Promise.all([searchSaturn(q).catch(() => []), searchUnity(q).catch(() => [])])
-      : [await searchSaturn(q).catch(() => [])];
-
-    for (const list of lists) {
-      for (const item of list) {
-        if (!seen.has(item.url)) {
-          seen.add(item.url);
-          merged.push(item);
-        }
-      }
+  for (const list of lists) {
+    for (const item of list || []) {
+      if (!item?.url || seen.has(item.url)) continue;
+      seen.add(item.url);
+      merged.push(item);
+      if (merged.length >= cap) return merged;
     }
-    if (merged.length >= 8) break;
   }
-
   return merged;
+}
+
+async function searchAnimeFireMulti(queries) {
+  const limit = config.CLOUD_MODE ? 10 : Math.min(queries.length, 14);
+  const batch = queries.slice(0, limit);
+  const lists = await Promise.all(batch.map((q) => searchAnimeFire(q).catch(() => [])));
+  return mergeSearchResults(lists, config.CLOUD_MODE ? 24 : 20);
 }
 
 async function validateStreamUrl(url) {
@@ -161,10 +158,52 @@ async function validateStreamUrl(url) {
   }
 }
 
+async function readCandidateMalId(animeRef) {
+  try {
+    const decoded = decodeRef(animeRef);
+    if (!decoded) return null;
+    const { info } = await fetchAnimeInfoByRef(decoded);
+    return info?.malID ? String(info.malID) : null;
+  } catch {
+    return null;
+  }
+}
+
+async function tryCandidate(candidate, options) {
+  const expectedMalId = options.malId ? String(options.malId) : null;
+  if (expectedMalId) {
+    const malId = await readCandidateMalId(candidate.url);
+    if (malId && malId !== expectedMalId) return null;
+  }
+
+  const eps = await getEpisodes(candidate.url);
+  if (!eps.length) return null;
+
+  if (candidate.url.includes('AnimeSaturn')) {
+    return candidate;
+  }
+
+  if (candidate.url.includes('AnimeUnity')) {
+    if (config.CLOUD_MODE) return candidate;
+    const stream = await fetchEpisodeStreamFromRef(decodeRef(eps[0].url));
+    if (await validateStreamUrl(stream.videoUrl)) return candidate;
+    return null;
+  }
+
+  return candidate;
+}
+
 async function findBestMatch(jikanTitle, alternatives = [], options = {}) {
   const titles = [jikanTitle, ...alternatives].filter(Boolean);
   const queries = buildSearchQueries(titles);
-  const results = await searchAnimeFireMulti(queries);
+  let results = await searchAnimeFireMulti(queries);
+
+  if (!results.length && queries.length) {
+    const fallback = queries.slice(0, 3);
+    const lists = await Promise.all(fallback.map((q) => searchAnimeFire(q).catch(() => [])));
+    results = mergeSearchResults(lists, 16);
+  }
+
   if (!results.length) return null;
 
   let ranked = rankCandidates(results, titles, jikanTitle, options);
@@ -173,24 +212,12 @@ async function findBestMatch(jikanTitle, alternatives = [], options = {}) {
     const rest = ranked.filter((c) => c.source !== 'animesaturn');
     ranked = [...saturn, ...rest];
   }
-  const tryLimit = useDirectUnity() ? 4 : 8;
+
+  const tryLimit = useDirectUnity() ? 8 : 10;
   for (const candidate of ranked.slice(0, tryLimit)) {
     try {
-      const eps = await getEpisodes(candidate.url);
-      if (!eps.length) continue;
-
-      if (candidate.url.includes('AnimeSaturn')) {
-        return candidate;
-      }
-
-      if (candidate.url.includes('AnimeUnity')) {
-        if (config.CLOUD_MODE) return candidate;
-        const stream = await fetchEpisodeStreamFromRef(decodeRef(eps[0].url));
-        if (await validateStreamUrl(stream.videoUrl)) return candidate;
-        continue;
-      }
-
-      return candidate;
+      const match = await tryCandidate(candidate, options);
+      if (match) return match;
     } catch {
       /* next */
     }

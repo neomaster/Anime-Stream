@@ -1,5 +1,18 @@
 const STOP_WORDS = new Set([
   'the', 'a', 'an', 'no', 'na', 'ni', 'wo', 'wa', 'ga', 'to', 'de', 'and', 'of',
+  'no', 'kimyou', 'bouken', 'bizarre', 'adventure', 'kimetsu', 'yaiba',
+]);
+
+const FRANCHISE_PREFIXES = [
+  /^jojo'?s?\s+bizarre\s+adventure\s*/i,
+  /^jojo\s+no\s+kimyou\s+na\s+bouken\s*/i,
+  /^boruto\s+naruto\s+next\s+generations\s*/i,
+  /^naruto\s+shippuden\s*/i,
+];
+
+const GENERIC_TOKENS = new Set([
+  'season', 'part', 'movie', 'special', 'ova', 'ona', 'tv', 'the', 'and', 'of',
+  'jojo', 'bizarre', 'adventure', 'kimyou', 'bouken', 'no', 'na', 'ni',
 ]);
 
 const TYPE_PATTERNS = [
@@ -41,6 +54,83 @@ function tokenize(text) {
   return normalizeText(text)
     .split(' ')
     .filter((w) => w.length > 1 && !STOP_WORDS.has(w));
+}
+
+function stripFranchise(text) {
+  let working = cleanAnimeName(text);
+  for (const re of FRANCHISE_PREFIXES) {
+    working = working.replace(re, ' ');
+  }
+  working = working
+    .replace(/\bpart\s+\d+\s*:\s*/gi, '')
+    .replace(/\bpart\s+\d+\b/gi, ' ')
+    .replace(/\s*:\s*/g, ' ')
+    .trim();
+  return normalizeText(working);
+}
+
+function isWeakQuery(q) {
+  const key = String(q || '').toLowerCase().trim();
+  if (key.length < 3) return true;
+  if (key.length < 4 && !/\s/.test(key)) return true;
+  if (/^[a-z]{2,3}$/.test(key)) return true;
+  return false;
+}
+
+function extractDistinctivePhrases(raw) {
+  const phrases = [];
+  const t = cleanAnimeName(raw);
+  if (!t) return phrases;
+
+  const colonParts = t.split(':').map((s) => s.trim()).filter(Boolean);
+  if (colonParts.length > 1) {
+    const head = colonParts[0];
+    const tail = colonParts[colonParts.length - 1];
+    if (tail.length >= 4 && !isWeakQuery(tail)) {
+      phrases.push({ text: tail, weight: 0.99 });
+    }
+    if (head.length >= 4 && !isWeakQuery(head) && head !== tail) {
+      phrases.push({ text: head, weight: 0.97 });
+    }
+    if (colonParts.length > 2) {
+      const mid = colonParts.slice(1).join(' ').trim();
+      if (mid.length >= 4 && !isWeakQuery(mid)) {
+        phrases.push({ text: mid, weight: 0.96 });
+      }
+    }
+  }
+
+  const partArc = t.match(/\bpart\s+(\d+)\s*:\s*(.+)$/i);
+  if (partArc) {
+    const arc = partArc[2].trim();
+    if (arc.length >= 4) {
+      phrases.push({ text: arc, weight: 1 });
+      phrases.push({ text: `part ${partArc[1]} ${arc}`, weight: 0.93 });
+    }
+  }
+
+  const partOnly = t.match(/^(.+?)\s+part\s+(\d+)\s*$/i);
+  if (partOnly) {
+    const base = partOnly[1].trim();
+    if (base.length >= 4) phrases.push({ text: base, weight: 0.92 });
+  }
+
+  return phrases;
+}
+
+function distinctiveTokens(titles) {
+  const counts = new Map();
+  for (const raw of titles) {
+    if (!raw) continue;
+    const tokens = new Set(tokenize(stripFranchise(raw) || raw));
+    for (const token of tokens) {
+      if (GENERIC_TOKENS.has(token) || token.length < 3) continue;
+      counts.set(token, (counts.get(token) || 0) + 1);
+    }
+  }
+  return [...counts.entries()]
+    .filter(([, n]) => n === 1)
+    .map(([t]) => t);
 }
 
 function extractMeta(title) {
@@ -221,6 +311,17 @@ function titleSimilarity(query, candidate) {
   score += seasonS;
   score += mediaTypeScore(qMeta, cMeta);
 
+  const qArc = stripFranchise(query);
+  const cArc = stripFranchise(candidate);
+  if (qArc.length >= 4 && cArc.length >= 4) {
+    if (qArc === cArc) score = Math.max(score, 0.96);
+    else if (qArc.includes(cArc) || cArc.includes(qArc)) score = Math.max(score, 0.86);
+    else {
+      const arcJac = jaccard(tokenize(qArc), tokenize(cArc));
+      if (arcJac >= 0.5) score = Math.max(score, arcJac * 0.94);
+    }
+  }
+
   return Math.max(0, Math.min(1, score));
 }
 
@@ -228,8 +329,8 @@ function buildSearchQueries(titles) {
   const queries = new Map();
 
   const add = (q, weight = 1) => {
-    const key = q.toLowerCase().trim();
-    if (key.length < 2) return;
+    const key = String(q || '').toLowerCase().trim();
+    if (isWeakQuery(key)) return;
     const prev = queries.get(key);
     queries.set(key, Math.max(prev || 0, weight));
   };
@@ -237,17 +338,34 @@ function buildSearchQueries(titles) {
   for (const raw of titles) {
     if (!raw) continue;
     const t = cleanAnimeName(raw);
-    add(t, 1);
+    add(t, 0.88);
+
+    for (const { text, weight } of extractDistinctivePhrases(t)) {
+      add(text, weight);
+      const arcMeta = extractMeta(text);
+      if (arcMeta.tokens.length >= 2) {
+        add(arcMeta.tokens.slice(0, 3).join(' '), weight - 0.03);
+        add(arcMeta.tokens.slice(0, 2).join(' '), weight - 0.05);
+      }
+    }
+
+    const arc = stripFranchise(t);
+    if (arc.length >= 4) add(arc, 0.98);
 
     const meta = extractMeta(t);
-    add(meta.core, 0.95);
+    add(meta.core, 0.9);
 
     const colonBase = t.split(':')[0].trim();
-    if (colonBase && colonBase !== t) add(colonBase, 0.9);
+    if (colonBase && colonBase !== t) add(colonBase, 0.95);
 
     if (meta.tokens.length >= 2) {
-      add(meta.tokens.slice(0, 3).join(' '), 0.94);
-      add(meta.tokens.slice(0, 2).join(' '), 0.91);
+      const nonGeneric = meta.tokens.filter((tok) => !GENERIC_TOKENS.has(tok));
+      if (nonGeneric.length >= 2) {
+        add(nonGeneric.slice(0, 3).join(' '), 0.94);
+        add(nonGeneric.slice(0, 2).join(' '), 0.92);
+      }
+      add(meta.tokens.slice(0, 3).join(' '), 0.86);
+      add(meta.tokens.slice(0, 2).join(' '), 0.84);
     }
 
     if (meta.season !== null) {
@@ -267,6 +385,12 @@ function buildSearchQueries(titles) {
 
     const slug = normalizeText(t).replace(/\s+/g, ' ');
     if (slug.length > 2) add(slug, 0.7);
+  }
+
+  const distinct = distinctiveTokens(titles);
+  if (distinct.length >= 2) {
+    add(distinct.slice(0, 3).join(' '), 0.96);
+    add(distinct.slice(0, 2).join(' '), 0.94);
   }
 
   return [...queries.entries()]
@@ -295,6 +419,9 @@ function rankCandidates(candidates, titles, queryHint = null, options = {}) {
   const audioPref = options.audioPref === 'dublado' ? 'dublado' : 'legendado';
 
   const queryMeta = titles[0] ? extractMeta(titles[0]) : null;
+  const queryArc = titles[0] ? stripFranchise(titles[0]) : '';
+  const signature = distinctiveTokens(titles);
+  const expectedMalId = options.malId ? String(options.malId) : null;
 
   return candidates
     .map((c) => {
@@ -307,16 +434,38 @@ function rankCandidates(candidates, titles, queryHint = null, options = {}) {
       }
 
       const cMeta = extractMeta(c.name);
+      const cArc = stripFranchise(c.name);
+
+      if (queryArc.length >= 4 && cArc.length >= 4) {
+        const arcSim = titleSimilarity(queryArc, cArc);
+        finalScore = Math.max(finalScore, arcSim * 1.05);
+      }
+
+      if (signature.length) {
+        const cTokenSet = new Set(cMeta.tokens);
+        let sigHit = 0;
+        for (const token of signature) {
+          if (cTokenSet.has(token)) sigHit++;
+        }
+        if (sigHit >= 2) finalScore += 0.2 + Math.min(0.2, sigHit * 0.06);
+        else if (signature.length >= 2 && sigHit === 0) finalScore -= 0.35;
+      }
 
       if (queryMeta?.tokens?.length) {
-        const qSet = new Set(queryMeta.tokens);
+        const qSet = new Set(queryMeta.tokens.filter((t) => !GENERIC_TOKENS.has(t)));
         let overlap = 0;
         for (const token of cMeta.tokens) {
           if (qSet.has(token)) overlap++;
         }
         if (overlap >= 2) {
           finalScore = Math.max(finalScore, 0.55 + Math.min(0.35, overlap * 0.08));
+        } else if (qSet.size >= 2 && overlap === 0) {
+          finalScore -= 0.25;
         }
+      }
+
+      if (expectedMalId && c.mal_id && String(c.mal_id) === expectedMalId) {
+        finalScore += 0.5;
       }
 
       if (queryMeta?.season !== null) {
@@ -345,7 +494,7 @@ function rankCandidates(candidates, titles, queryHint = null, options = {}) {
 
       return { ...c, matchScore: finalScore, matchedTitle, audioPref };
     })
-    .filter((c) => c.matchScore >= 0.42)
+    .filter((c) => c.matchScore >= 0.38)
     .sort((a, b) => b.matchScore - a.matchScore);
 }
 
@@ -406,6 +555,10 @@ module.exports = {
   cleanAnimeName,
   normalizeText,
   extractMeta,
+  stripFranchise,
+  extractDistinctivePhrases,
+  distinctiveTokens,
+  isWeakQuery,
   extractLocaleFlags,
   localePreferenceScore,
   titleSimilarity,

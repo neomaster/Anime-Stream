@@ -347,23 +347,23 @@ async function getEpisodeStream(episodeUrl) {
   };
 }
 
-function limitQueries(queries, max = config.CLOUD_MODE ? 6 : 12) {
+function limitQueries(queries, max = config.CLOUD_MODE ? 10 : 14) {
   return queries.slice(0, max);
 }
 
 async function searchAnimeFireMulti(queries) {
+  const list = limitQueries(queries);
+  const batches = await Promise.all(list.map((q) => searchAnimeFire(q).catch(() => [])));
   const seen = new Set();
   const merged = [];
-  const list = limitQueries(queries);
 
-  for (const q of list) {
-    const batch = await searchAnimeFire(q).catch(() => []);
+  for (const batch of batches) {
     for (const item of batch) {
       if (!item?.url || seen.has(item.url)) continue;
       seen.add(item.url);
       merged.push(item);
+      if (merged.length >= 20) return merged;
     }
-    if (merged.length >= 8) break;
   }
 
   return merged;
@@ -377,7 +377,7 @@ async function findBestMatch(jikanTitle, alternatives = [], options = {}) {
   if (!results.length) return null;
 
   const ranked = rankCandidates(results, titles, jikanTitle, options);
-  const tryLimit = config.CLOUD_MODE ? 4 : 6;
+  const tryLimit = config.CLOUD_MODE ? 8 : 6;
   for (const candidate of ranked.slice(0, tryLimit)) {
     const episodes = await getEpisodes(candidate.url).catch(() => []);
     if (episodes.length) return candidate;
