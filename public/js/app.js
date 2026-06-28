@@ -53,13 +53,25 @@ function showToast(msg, isError = false) {
   showToast._t = setTimeout(() => { t.hidden = true; }, 4000);
 }
 
-async function api(path) {
-  const res = await fetch(path);
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.error || `Erro ${res.status}`);
+async function api(path, opts = {}) {
+  const timeoutMs = opts.timeoutMs ?? 90000;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(path, { signal: controller.signal });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || `Erro ${res.status}`);
+    }
+    return res.json();
+  } catch (err) {
+    if (err.name === 'AbortError') {
+      throw new Error('O servidor demorou para responder. Tente novamente em instantes.');
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
   }
-  return res.json();
 }
 
 function getWatchStore() {
@@ -273,6 +285,9 @@ async function openAnime(malId) {
   history.replaceState(null, '', `?anime=${malId}`);
 
   $('#detailTitle').textContent = 'Carregando...';
+  $('#detailSynopsis').textContent = 'Buscando episódios nas fontes de streaming…';
+  $('#sourceBadge').textContent = '⏳ Consultando fontes…';
+  $('#episodesGrid').innerHTML = '<p class="ep-empty">Carregando episódios…</p>';
   try {
     const data = await api(`/api/anime/${malId}?audio=${encodeURIComponent(Subtitles.getAudioPref())}`);
     state.currentAnime = data.anime;

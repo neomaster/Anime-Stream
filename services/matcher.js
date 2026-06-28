@@ -140,6 +140,8 @@ function seasonScore(qMeta, cMeta) {
 
 function mediaTypeScore(qMeta, cMeta) {
   if (qMeta.mediaType === cMeta.mediaType) return 0.05;
+  const serialTypes = new Set(['tv', 'ona', 'ova']);
+  if (serialTypes.has(qMeta.mediaType) && serialTypes.has(cMeta.mediaType)) return 0;
   if (qMeta.mediaType === 'tv' && cMeta.mediaType === 'movie') return -0.3;
   if (qMeta.mediaType === 'movie' && cMeta.mediaType === 'tv') return -0.3;
   return -0.1;
@@ -243,6 +245,11 @@ function buildSearchQueries(titles) {
     const colonBase = t.split(':')[0].trim();
     if (colonBase && colonBase !== t) add(colonBase, 0.9);
 
+    if (meta.tokens.length >= 2) {
+      add(meta.tokens.slice(0, 3).join(' '), 0.94);
+      add(meta.tokens.slice(0, 2).join(' '), 0.91);
+    }
+
     if (meta.season !== null) {
       add(`${meta.core} ${meta.season}`, 0.93);
       add(`${meta.core} season ${meta.season}`, 0.9);
@@ -300,6 +307,17 @@ function rankCandidates(candidates, titles, queryHint = null, options = {}) {
       }
 
       const cMeta = extractMeta(c.name);
+
+      if (queryMeta?.tokens?.length) {
+        const qSet = new Set(queryMeta.tokens);
+        let overlap = 0;
+        for (const token of cMeta.tokens) {
+          if (qSet.has(token)) overlap++;
+        }
+        if (overlap >= 2) {
+          finalScore = Math.max(finalScore, 0.55 + Math.min(0.35, overlap * 0.08));
+        }
+      }
 
       if (queryMeta?.season !== null) {
         const season = String(queryMeta.season);

@@ -36,11 +36,18 @@ async function findBestMatchWithEpisodes(provider, jikanTitle, alternatives, opt
 }
 
 async function cloudFindBestMatch(jikanTitle, alternatives = [], options = {}) {
-  // AnimeFire é mais estável em datacenters (AnimeUnity costuma retornar HTTP 500).
-  const fireMatch = await findBestMatchWithEpisodes(goanime, jikanTitle, alternatives, options);
-  if (fireMatch) return fireMatch;
+  const [fireMatch, unityMatch] = await Promise.all([
+    findBestMatchWithEpisodes(goanime, jikanTitle, alternatives, options),
+    findBestMatchWithEpisodes(consumet, jikanTitle, alternatives, options),
+  ]);
 
-  return findBestMatchWithEpisodes(consumet, jikanTitle, alternatives, options);
+  if (fireMatch && unityMatch) {
+    const fireScore = fireMatch.matchScore || 0;
+    const unityScore = unityMatch.matchScore || 0;
+    return fireScore >= unityScore ? fireMatch : unityMatch;
+  }
+
+  return fireMatch || unityMatch || null;
 }
 
 async function cloudSearchAnimeFireMulti(queries) {

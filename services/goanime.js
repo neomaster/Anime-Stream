@@ -23,10 +23,22 @@ function resolveUrl(base, ref) {
 }
 
 function normalizeQuery(query) {
-  return query.toLowerCase().trim().replace(/\s+/g, '-');
+  return String(query || '')
+    .toLowerCase()
+    .trim()
+    .replace(/[:'"!?.,]/g, ' ')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
 }
 
-const { cleanAnimeName, buildSearchQueries, findBestMatch: matchBest, titleSimilarity } = matcher;
+const {
+  cleanAnimeName,
+  buildSearchQueries,
+  findBestMatch: matchBest,
+  rankCandidates,
+  titleSimilarity,
+} = matcher;
 const { normalizeSubtitles } = require('./subtitles');
 
 async function fetchPage(url) {
@@ -180,8 +192,16 @@ function detectType(url) {
 
 async function searchAnimeFire(query) {
   const normalized = normalizeQuery(query);
+  if (!normalized) return [];
+
   const url = `${config.ANIMEFIRE_BASE}/pesquisar/${encodeURIComponent(normalized)}`;
-  const html = await fetchPage(url);
+  let html;
+  try {
+    html = await fetchPage(url);
+  } catch (err) {
+    if (/AnimeFire HTTP (404|429)/i.test(err.message)) return [];
+    throw err;
+  }
   const $ = cheerio.load(html);
   const results = [];
 
@@ -327,21 +347,23 @@ async function getEpisodeStream(episodeUrl) {
   };
 }
 
+function limitQueries(queries, max = config.CLOUD_MODE ? 6 : 12) {
+  return queries.slice(0, max);
+}
+
 async function searchAnimeFireMulti(queries) {
   const seen = new Set();
   const merged = [];
+  const list = limitQueries(queries);
 
-  const results = await Promise.all(
-    queries.map((q) => searchAnimeFire(q).catch(() => []))
-  );
-
-  for (const list of results) {
-    for (const item of list) {
-      if (!seen.has(item.url)) {
-        seen.add(item.url);
-        merged.push(item);
-      }
+  for (const q of list) {
+    const batch = await searchAnimeFire(q).catch(() => []);
+    for (const item of batch) {
+      if (!item?.url || seen.has(item.url)) continue;
+      seen.add(item.url);
+      merged.push(item);
     }
+    if (merged.length >= 8) break;
   }
 
   return merged;
@@ -353,6 +375,13 @@ async function findBestMatch(jikanTitle, alternatives = [], options = {}) {
   const results = await searchAnimeFireMulti(queries);
 
   if (!results.length) return null;
+
+  const ranked = rankCandidates(results, titles, jikanTitle, options);
+  const tryLimit = config.CLOUD_MODE ? 4 : 6;
+  for (const candidate of ranked.slice(0, tryLimit)) {
+    const episodes = await getEpisodes(candidate.url).catch(() => []);
+    if (episodes.length) return candidate;
+  }
 
   return matchBest(results, titles, jikanTitle, options);
 }
