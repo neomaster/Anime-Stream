@@ -2,6 +2,7 @@ const fetch = require('node-fetch');
 const {
   rankCandidates,
   buildSearchQueries,
+  buildPrioritizedQueries,
   titleSimilarity,
 } = require('./matcher');
 const { normalizeSubtitles, subtitleLangLabel } = require('./subtitles');
@@ -195,7 +196,7 @@ async function tryCandidate(candidate, options) {
 
 async function findBestMatch(jikanTitle, alternatives = [], options = {}) {
   const titles = [jikanTitle, ...alternatives].filter(Boolean);
-  const queries = buildSearchQueries(titles);
+  const queries = buildPrioritizedQueries(titles);
   let results = await searchAnimeFireMulti(queries);
 
   if (!results.length && queries.length) {

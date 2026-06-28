@@ -456,6 +456,43 @@ function buildSearchQueries(titles) {
     .map(([q]) => q);
 }
 
+function colonTailQueries(titles) {
+  const tails = [];
+  for (const raw of titles) {
+    const parts = cleanAnimeName(raw)
+      .split(':')
+      .map((s) => s.trim())
+      .filter(Boolean);
+    if (parts.length > 1) {
+      const tail = parts[parts.length - 1];
+      if (!isWeakQuery(tail)) tails.push(tail);
+    }
+  }
+  return [...new Set(tails)];
+}
+
+function buildPrioritizedQueries(titles) {
+  const seen = new Set();
+  const ordered = [];
+
+  const push = (q) => {
+    const key = String(q || '').toLowerCase().trim();
+    if (isWeakQuery(key) || seen.has(key)) return;
+    seen.add(key);
+    ordered.push(key);
+  };
+
+  for (const tail of colonTailQueries(titles)) push(tail);
+
+  for (const raw of titles) {
+    for (const { text } of expandFranchiseQueries(raw)) push(text);
+  }
+
+  for (const q of buildSearchQueries(titles)) push(q);
+
+  return ordered;
+}
+
 function scoreAgainstTitles(candidateName, titles, weights = null) {
   let best = 0;
   let bestTitle = null;
@@ -542,10 +579,10 @@ function rankCandidates(candidates, titles, queryHint = null, options = {}) {
         else if (seasonHints.some((h) => name.includes(h)) || name.endsWith(` ${season}`)) {
           finalScore += 0.18;
         } else if (cMeta.season !== null && cMeta.season !== queryMeta.season) {
-          finalScore -= 0.45;
+          finalScore -= 0.55;
         }
       } else if (cMeta.season !== null) {
-        finalScore -= 0.42;
+        finalScore -= 0.5;
       }
 
       finalScore += localePreferenceScore(c.name, c.dub, audioPref, c.url || c.id || '');
@@ -621,6 +658,8 @@ module.exports = {
   localePreferenceScore,
   titleSimilarity,
   buildSearchQueries,
+  buildPrioritizedQueries,
+  colonTailQueries,
   scoreAgainstTitles,
   rankCandidates,
   findBestMatch,

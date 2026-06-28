@@ -35,6 +35,7 @@ function normalizeQuery(query) {
 const {
   cleanAnimeName,
   buildSearchQueries,
+  buildPrioritizedQueries,
   findBestMatch: matchBest,
   rankCandidates,
   titleSimilarity,
@@ -371,7 +372,7 @@ async function searchAnimeFireMulti(queries) {
 
 async function findBestMatch(jikanTitle, alternatives = [], options = {}) {
   const titles = [jikanTitle, ...alternatives].filter(Boolean);
-  const queries = buildSearchQueries(titles);
+  const queries = buildPrioritizedQueries(titles);
   const results = await searchAnimeFireMulti(queries);
 
   if (!results.length) return null;
