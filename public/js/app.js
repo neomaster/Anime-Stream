@@ -322,6 +322,13 @@ async function openAnime(malId) {
     const stream = await streamPromise;
     if (stream?.error) throw stream.error;
 
+    if (!stream?.found && !stream?.source) {
+      $('#sourceBadge').textContent = '⚠ Não encontrado nas fontes de streaming';
+      $('#episodesGrid').innerHTML =
+        '<p class="ep-empty">Nenhum episódio encontrado nas fontes disponíveis.</p>';
+      return;
+    }
+
     renderDetailCommon({
       title: anime.title,
       synopsis: anime.synopsis,

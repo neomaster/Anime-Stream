@@ -304,11 +304,17 @@ app.get('/api/anime/:malId/episodes', async (req, res) => {
     const sourceMatch = await streaming.findBestMatch(anime.title, altTitles, { audioPref });
 
     if (!sourceMatch?.url) {
-      return res.status(404).json({ error: 'Anime não encontrado nas fontes de streaming' });
+      return res.json({
+        source: null,
+        episodes: [],
+        audioPref,
+        found: false,
+        message: 'Anime não encontrado nas fontes de streaming',
+      });
     }
 
     const episodes = await streaming.getEpisodes(sourceMatch.url);
-    res.json({ source: sourceMatch, episodes, audioPref });
+    res.json({ source: sourceMatch, episodes, audioPref, found: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
