@@ -30,6 +30,8 @@ const state = {
   altSourcesEnabled: false,
 };
 
+let detailSessionGeneration = 0;
+
 const videoPlayer = createPlayer();
 const player = videoPlayer.el;
 
@@ -289,6 +291,9 @@ function renderAnimeMeta(anime) {
 }
 
 async function openAnime(malId) {
+  const loadGen = ++detailSessionGeneration;
+  const isStale = () => loadGen !== detailSessionGeneration;
+
   showSection('detail');
   window.scrollTo(0, 0);
   $('#playerSection').hidden = true;
@@ -303,9 +308,9 @@ async function openAnime(malId) {
   const streamPath = `/api/anime/${malId}/episodes?audio=${audio}`;
 
   try {
-    const streamPromise = api(streamPath, { timeoutMs: 90000 }).catch((err) => ({ error: err }));
-
     const meta = await api(`/api/anime/${malId}/meta`, { timeoutMs: 20000 });
+    if (isStale()) return;
+
     const anime = meta.anime;
     state.currentAnime = anime;
     setAnimeKey(malId, null, anime.title, anime.poster);
@@ -319,8 +324,8 @@ async function openAnime(malId) {
     });
     $('#detailSynopsis').textContent = 'Buscando episódios nas fontes de streaming…';
 
-    const stream = await streamPromise;
-    if (stream?.error) throw stream.error;
+    const stream = await api(streamPath, { timeoutMs: 90000 });
+    if (isStale()) return;
 
     if (!stream?.found && !stream?.source) {
       $('#sourceBadge').textContent = '⚠ Não encontrado nas fontes de streaming';
@@ -328,6 +333,8 @@ async function openAnime(malId) {
         '<p class="ep-empty">Nenhum episódio encontrado nas fontes disponíveis.</p>';
       return;
     }
+
+    if (state.malId && String(state.malId) !== String(malId)) return;
 
     renderDetailCommon({
       title: anime.title,
@@ -337,6 +344,7 @@ async function openAnime(malId) {
       episodes: stream.episodes,
     });
   } catch (err) {
+    if (isStale()) return;
     if (state.currentAnime) {
       $('#sourceBadge').textContent = '⚠ Não encontrado nas fontes de streaming';
       $('#episodesGrid').innerHTML = '<p class="ep-empty">Nenhum episódio encontrado nas fontes disponíveis.</p>';
@@ -636,6 +644,9 @@ async function playMagnetEpisode(episode, btn, idx, { onMagnetProgress, onPicker
 }
 
 async function playEpisode(episode, btn, idx) {
+  const playGen = detailSessionGeneration;
+  const isStale = () => playGen !== detailSessionGeneration;
+
   $$('.episode-btn').forEach((b) => b.classList.remove('active'));
   if (btn) btn.classList.add('active');
 
@@ -664,8 +675,10 @@ async function playEpisode(episode, btn, idx) {
 
   try {
     const stream = await api(
-      `/api/stream?url=${encodeURIComponent(episode.url)}&audio=${encodeURIComponent(Subtitles.getAudioPref())}`
+      `/api/stream?url=${encodeURIComponent(episode.url)}&audio=${encodeURIComponent(Subtitles.getAudioPref())}&ep=${encodeURIComponent(episode.number)}`
     );
+    if (isStale()) return;
+
     const src = stream.videoProxy;
 
     if (stream.type === 'hls' && window.Hls && Hls.isSupported()) {

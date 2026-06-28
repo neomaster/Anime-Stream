@@ -5,6 +5,11 @@ const {
   buildPrioritizedQueries,
   titleSimilarity,
 } = require('./matcher');
+const {
+  validateSourceCandidate,
+  validateStreamUrlEpisode,
+  validateEpisodeRef,
+} = require('./source-validator');
 const { normalizeSubtitles, subtitleLangLabel } = require('./subtitles');
 const unityDirect = require('./animeunity-direct');
 const saturnDirect = require('./anime-saturn-direct');
@@ -171,14 +176,26 @@ async function readCandidateMalId(animeRef) {
 }
 
 async function tryCandidate(candidate, options) {
-  const expectedMalId = options.malId ? String(options.malId) : null;
-  if (expectedMalId) {
-    const malId = await readCandidateMalId(candidate.url);
-    if (malId && malId !== expectedMalId) return null;
-  }
-
   const eps = await getEpisodes(candidate.url);
   if (!eps.length) return null;
+
+  const validation = await validateSourceCandidate(
+    candidate,
+    {
+      malId: options.malId,
+      jikanTitle: options.jikanTitle,
+      altTitles: options.altTitles,
+      expectedEpisodes: options.expectedEpisodes,
+      status: options.status,
+      episodes: eps,
+    },
+    readCandidateMalId
+  );
+
+  if (!validation.ok) {
+    console.warn('[match-reject]', candidate.name, validation.reason);
+    return null;
+  }
 
   if (candidate.url.includes('AnimeSaturn')) {
     return candidate;
@@ -196,6 +213,11 @@ async function tryCandidate(candidate, options) {
 
 async function findBestMatch(jikanTitle, alternatives = [], options = {}) {
   const titles = [jikanTitle, ...alternatives].filter(Boolean);
+  const matchOptions = {
+    ...options,
+    jikanTitle,
+    altTitles: alternatives,
+  };
   const queries = buildPrioritizedQueries(titles);
   let results = await searchAnimeFireMulti(queries);
 
@@ -207,7 +229,7 @@ async function findBestMatch(jikanTitle, alternatives = [], options = {}) {
 
   if (!results.length) return null;
 
-  let ranked = rankCandidates(results, titles, jikanTitle, options);
+  let ranked = rankCandidates(results, titles, jikanTitle, matchOptions);
   if (config.CLOUD_MODE) {
     const saturn = ranked.filter((c) => c.source === 'animesaturn');
     const rest = ranked.filter((c) => c.source !== 'animesaturn');
@@ -217,7 +239,7 @@ async function findBestMatch(jikanTitle, alternatives = [], options = {}) {
   const tryLimit = useDirectUnity() ? 8 : 10;
   for (const candidate of ranked.slice(0, tryLimit)) {
     try {
-      const match = await tryCandidate(candidate, options);
+      const match = await tryCandidate(candidate, matchOptions);
       if (match) return match;
     } catch {
       /* next */
@@ -385,7 +407,16 @@ async function getEpisodeStream(episodeRef, options = {}) {
   const decoded = decodeRef(episodeRef);
   if (!decoded) throw new Error('Episodio invalido');
 
+  const refCheck = validateEpisodeRef(episodeRef, options.episodeNumber);
+  if (!refCheck.ok) throw new Error(refCheck.reason || 'Episodio invalido');
+
   const stream = await fetchEpisodeStreamFromRef(decoded, options);
+
+  const urlCheck = validateStreamUrlEpisode(stream.videoUrl, options.episodeNumber);
+  if (!urlCheck.ok) {
+    console.warn('[stream-reject]', urlCheck.reason, stream.videoUrl?.slice(0, 100));
+    throw new Error(urlCheck.reason || 'Video nao corresponde ao episodio');
+  }
   return {
     ...stream,
     goanime: {

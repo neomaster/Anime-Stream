@@ -264,7 +264,12 @@ app.get('/api/anime/:malId', async (req, res) => {
       ...(anime.synonyms || []),
     ].filter(Boolean);
     const sourceMatch = await streaming
-      .findBestMatch(anime.title, altTitles, { audioPref, malId: anime.mal_id })
+      .findBestMatch(anime.title, altTitles, {
+        audioPref,
+        malId: anime.mal_id,
+        expectedEpisodes: anime.episodes,
+        status: anime.status,
+      })
       .catch(() => null);
 
     let episodes = [];
@@ -316,6 +321,8 @@ app.get('/api/anime/:malId/episodes', async (req, res) => {
     const sourceMatch = await streaming.findBestMatch(anime.title, altTitles, {
       audioPref,
       malId: anime.mal_id,
+      expectedEpisodes: anime.episodes,
+      status: anime.status,
     });
 
     if (!sourceMatch?.url) {
@@ -349,7 +356,8 @@ app.get('/api/stream', async (req, res) => {
     if (!episodeUrl) return res.status(400).json({ error: 'URL do episódio obrigatória' });
 
     const audioPref = req.query.audio === 'dublado' ? 'dublado' : 'legendado';
-    const stream = await streaming.getEpisodeStream(episodeUrl, { audioPref });
+    const episodeNumber = parseInt(req.query.ep, 10) || null;
+    const stream = await streaming.getEpisodeStream(episodeUrl, { audioPref, episodeNumber });
     const referer = stream.streamReferer || null;
 
     stream.videoProxy = buildVideoProxyUrl(req, stream.videoUrl, referer);
