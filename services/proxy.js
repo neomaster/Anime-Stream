@@ -1,14 +1,19 @@
 const fetch = require('node-fetch');
 const config = require('../config');
 
-function getReferer(targetUrl) {
+const SATURN_BASE = (process.env.ANIME_SATURN_BASE || 'https://www.animesaturn.cx').replace(/\/+$/, '') + '/';
+const UNITY_BASE = (process.env.ANIMEUNITY_BASE || 'https://www.animeunity.to').replace(/\/+$/, '') + '/';
+
+function getReferer(targetUrl, override) {
+  if (override) return String(override);
+
   try {
     const host = new URL(targetUrl).hostname;
     if (host.includes('animefire')) return config.ANIMEFIRE_BASE;
-    if (host.includes('animesaturn')) return 'https://www.animesaturn.me/';
-    if (host.includes('animeunity')) return 'https://www.animeunity.so/';
-    if (host.includes('vixcloud')) return 'https://www.animeunity.to/';
-    if (host.includes('streampeaker') || host.includes('neko.')) return 'https://www.animesaturn.me/';
+    if (host.includes('animesaturn') || host.includes('streampeaker') || host.includes('neko.')) {
+      return SATURN_BASE;
+    }
+    if (host.includes('animeunity') || host.includes('vixcloud')) return UNITY_BASE;
     if (host.includes('lightspeedst') || host.includes('blogspot') || host.includes('blogger')) {
       return config.ANIMEFIRE_BASE;
     }
@@ -18,13 +23,15 @@ function getReferer(targetUrl) {
   }
 }
 
-function proxyUrlFor(targetUrl, req) {
+function proxyUrlFor(targetUrl, req, referer) {
   const proto = req.get('x-forwarded-proto') || req.protocol || 'https';
   const host = req.get('host');
-  return `${proto}://${host}/api/proxy/video?url=${encodeURIComponent(targetUrl)}`;
+  let out = `${proto}://${host}/api/proxy/video?url=${encodeURIComponent(targetUrl)}`;
+  if (referer) out += `&referer=${encodeURIComponent(referer)}`;
+  return out;
 }
 
-function rewriteM3u8Playlist(text, baseUrl, req) {
+function rewriteM3u8Playlist(text, baseUrl, req, referer) {
   const base = new URL(baseUrl);
   return text
     .split('\n')
@@ -37,30 +44,59 @@ function rewriteM3u8Playlist(text, baseUrl, req) {
         if (trimmed.includes('URI="')) {
           return line.replace(/URI="([^"]+)"/g, (_, uri) => {
             const abs = uri.startsWith('http') ? uri : new URL(uri, base).href;
-            return `URI="${proxyUrlFor(abs, req)}"`;
+            return `URI="${proxyUrlFor(abs, req, referer)}"`;
           });
         }
         return line;
       }
       const abs = trimmed.startsWith('http') ? trimmed : new URL(trimmed, base).href;
-      return proxyUrlFor(abs, req);
+      return proxyUrlFor(abs, req, referer);
     })
     .join('\n');
 }
 
-async function proxyStream(targetUrl, req, res) {
-  const referer = getReferer(targetUrl);
+async function fetchUpstream(targetUrl, req, referer) {
   const headers = {
     'User-Agent': config.USER_AGENT,
     Accept: '*/*',
     Referer: referer,
-    Origin: referer,
+    Origin: (() => {
+      try {
+        return new URL(referer).origin;
+      } catch {
+        return referer.replace(/\/+$/, '');
+      }
+    })(),
   };
 
   const range = req.headers.range;
   if (range) headers.Range = range;
 
-  const response = await fetch(targetUrl, { headers });
+  return fetch(targetUrl, { headers, timeout: 60000 });
+}
+
+async function proxyStream(targetUrl, req, res) {
+  const referer = getReferer(targetUrl, req.query.referer);
+  let response = await fetchUpstream(targetUrl, req, referer);
+
+  if (!response.ok && response.status >= 400) {
+    const altReferer = referer.includes('animesaturn.cx')
+      ? referer.replace('animesaturn.cx', 'www.animesaturn.cx')
+      : referer;
+    if (altReferer !== referer) {
+      response = await fetchUpstream(targetUrl, req, altReferer);
+    }
+  }
+
+  if (!response.ok) {
+    res.status(502).json({
+      error: 'Fonte de video indisponivel no proxy',
+      upstream: response.status,
+      url: targetUrl.slice(0, 120),
+    });
+    return;
+  }
+
   const contentType = response.headers.get('content-type') || '';
   const isM3u8 =
     /\.m3u8/i.test(targetUrl) ||
@@ -73,7 +109,7 @@ async function proxyStream(targetUrl, req, res) {
   if (isM3u8) {
     const text = await response.text();
     res.setHeader('Content-Type', 'application/vnd.apple.mpegurl; charset=utf-8');
-    res.send(rewriteM3u8Playlist(text, targetUrl, req));
+    res.send(rewriteM3u8Playlist(text, targetUrl, req, referer));
     return;
   }
 
@@ -98,13 +134,19 @@ async function proxyStream(targetUrl, req, res) {
   response.body.pipe(res);
 }
 
-async function proxyText(targetUrl, res) {
+async function proxyText(targetUrl, res, refererOverride) {
   const response = await fetch(targetUrl, {
     headers: {
       'User-Agent': config.USER_AGENT,
-      Referer: getReferer(targetUrl),
+      Referer: getReferer(targetUrl, refererOverride),
     },
+    timeout: 30000,
   });
+
+  if (!response.ok) {
+    res.status(502).json({ error: 'Legenda indisponivel no proxy', upstream: response.status });
+    return;
+  }
 
   const text = await response.text();
   res.setHeader('Content-Type', 'text/vtt; charset=utf-8');
@@ -112,4 +154,4 @@ async function proxyText(targetUrl, res) {
   res.send(text);
 }
 
-module.exports = { proxyStream, proxyText };
+module.exports = { proxyStream, proxyText, getReferer, proxyUrlFor };

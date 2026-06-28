@@ -87,10 +87,10 @@ module.exports = {
     useCloudStreaming() && isConsumetRef(url)
       ? consumet.getEpisodes(url, ...args)
       : goanime.getEpisodes(url, ...args),
-  getEpisodeStream: (url, ...args) =>
+  getEpisodeStream: (url, options, ...args) =>
     useCloudStreaming() && isConsumetRef(url)
-      ? consumet.getEpisodeStream(url, ...args)
-      : goanime.getEpisodeStream(url, ...args),
+      ? consumet.getEpisodeStream(url, options, ...args)
+      : goanime.getEpisodeStream(url, options, ...args),
   getAnimeFromSource: (url, ...args) =>
     useCloudStreaming() && isConsumetRef(url)
       ? consumet.getAnimeFromSource(url, ...args)

@@ -335,7 +335,7 @@ async function resolveAnimeFireStream(episodeUrl) {
   return { ...video, subtitles: extractSubtitles(html), qualities: [] };
 }
 
-async function getEpisodeStream(episodeUrl) {
+async function getEpisodeStream(episodeUrl, _options = {}) {
   const stream = await resolveAnimeFireStream(episodeUrl);
 
   return {

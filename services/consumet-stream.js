@@ -149,7 +149,7 @@ async function validateStreamUrl(url) {
       headers: {
         'User-Agent': config.USER_AGENT,
         Range: 'bytes=0-512',
-        Referer: 'https://www.animeunity.to/',
+        Referer: process.env.ANIME_SATURN_BASE || 'https://www.animesaturn.cx/',
       },
       timeout: 15000,
     });
@@ -292,16 +292,37 @@ async function getAnimeFromSource(sourceRef) {
   };
 }
 
-async function fetchEpisodeStreamFromRef(decoded) {
+function pickSaturnSource(sources, options = {}) {
+  const sorted = [...sources].sort((a, b) => (b.isM3U8 ? 1 : 0) - (a.isM3U8 ? 1 : 0));
+  const audioPref = options.audioPref === 'dublado' ? 'dublado' : 'legendado';
+
+  if (audioPref === 'legendado') {
+    const subFree = sorted.find(
+      (s) => s.url && !/SUB_ITA|_ITA\.mp4|_DUB_/i.test(s.url)
+    );
+    if (subFree) return subFree;
+  }
+
+  if (audioPref === 'dublado') {
+    const dubbed = sorted.find((s) => s.url && /_DUB_|dub/i.test(s.url));
+    if (dubbed) return dubbed;
+  }
+
+  return sorted.find((s) => s.isM3U8) || sorted[0] || null;
+}
+
+async function fetchEpisodeStreamFromRef(decoded, options = {}) {
   let sources = [];
   let rawSubtitles = [];
   let streamMeta = {};
+  let streamReferer = null;
 
   if (decoded.provider === 'AnimeSaturn') {
     try {
       if (useDirectUnity()) {
         const data = await saturnDirect.fetchEpisodeSources(decoded.id);
         sources = data.sources || [];
+        streamReferer = data.headers?.Referer || null;
       } else {
         throw new Error('fallback');
       }
@@ -309,6 +330,7 @@ async function fetchEpisodeStreamFromRef(decoded) {
       const provider = await getSaturnProvider();
       const data = await provider.fetchEpisodeSources(decoded.id);
       sources = data.sources || [];
+      streamReferer = data.headers?.Referer || null;
     }
   } else if (decoded.provider === PROVIDER_NAME) {
     const data = await unityDirect.fetchEpisodeSources(decoded.id);
@@ -325,11 +347,16 @@ async function fetchEpisodeStreamFromRef(decoded) {
     sources = data.sources || [];
   }
 
-  const sorted = [...sources].sort((a, b) => (b.isM3U8 ? 1 : 0) - (a.isM3U8 ? 1 : 0));
-  let best = sorted.find((s) => s.isM3U8) || sorted[0];
-  if (!best) throw new Error('Nenhuma fonte de video encontrada');
+  let best =
+    decoded.provider === 'AnimeSaturn'
+      ? pickSaturnSource(sources, options)
+      : [...sources].sort((a, b) => (b.isM3U8 ? 1 : 0) - (a.isM3U8 ? 1 : 0)).find((s) => s.isM3U8) ||
+        sources[0];
+
+  if (!best?.url) throw new Error('Nenhuma fonte de video encontrada');
 
   if (!config.CLOUD_MODE) {
+    const sorted = [...sources].sort((a, b) => (b.isM3U8 ? 1 : 0) - (a.isM3U8 ? 1 : 0));
     for (const src of sorted) {
       if (await validateStreamUrl(src.url)) {
         best = src;
@@ -342,6 +369,7 @@ async function fetchEpisodeStreamFromRef(decoded) {
 
   return {
     videoUrl: best.url,
+    streamReferer,
     type: best.isM3U8 || /\.m3u8/i.test(best.url) ? 'hls' : 'mp4',
     quality: best.quality || 'default',
     qualities: sources.map((s) => ({ url: s.url, label: s.quality || 'default' })),
@@ -353,11 +381,11 @@ async function fetchEpisodeStreamFromRef(decoded) {
   };
 }
 
-async function getEpisodeStream(episodeRef) {
+async function getEpisodeStream(episodeRef, options = {}) {
   const decoded = decodeRef(episodeRef);
   if (!decoded) throw new Error('Episodio invalido');
 
-  const stream = await fetchEpisodeStreamFromRef(decoded);
+  const stream = await fetchEpisodeStreamFromRef(decoded, options);
   return {
     ...stream,
     goanime: {

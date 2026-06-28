@@ -335,21 +335,33 @@ app.get('/api/anime/:malId/episodes', async (req, res) => {
   }
 });
 
+function buildVideoProxyUrl(req, videoUrl, referer) {
+  const proto = req.get('x-forwarded-proto') || req.protocol || 'https';
+  const host = req.get('host');
+  let out = `${proto}://${host}/api/proxy/video?url=${encodeURIComponent(videoUrl)}`;
+  if (referer) out += `&referer=${encodeURIComponent(referer)}`;
+  return out;
+}
+
 app.get('/api/stream', async (req, res) => {
   try {
     const episodeUrl = req.query.url;
     if (!episodeUrl) return res.status(400).json({ error: 'URL do episódio obrigatória' });
 
-    const stream = await streaming.getEpisodeStream(episodeUrl);
+    const audioPref = req.query.audio === 'dublado' ? 'dublado' : 'legendado';
+    const stream = await streaming.getEpisodeStream(episodeUrl, { audioPref });
+    const referer = stream.streamReferer || null;
 
-    stream.videoProxy = `/api/proxy/video?url=${encodeURIComponent(stream.videoUrl)}`;
+    stream.videoProxy = buildVideoProxyUrl(req, stream.videoUrl, referer);
     stream.subtitles = normalizeSubtitles(stream.subtitles || []).map((sub) => ({
       ...sub,
-      proxyUrl: `/api/proxy/subtitle?url=${encodeURIComponent(sub.url)}`,
+      proxyUrl: `/api/proxy/subtitle?url=${encodeURIComponent(sub.url)}${
+        referer ? `&referer=${encodeURIComponent(referer)}` : ''
+      }`,
     }));
     stream.qualities = (stream.qualities || []).map((q) => ({
       ...q,
-      proxyUrl: `/api/proxy/video?url=${encodeURIComponent(q.url)}`,
+      proxyUrl: buildVideoProxyUrl(req, q.url, referer),
     }));
 
     res.json(stream);
@@ -372,7 +384,7 @@ app.get('/api/proxy/subtitle', async (req, res) => {
   try {
     const url = req.query.url;
     if (!url) return res.status(400).json({ error: 'URL obrigatória' });
-    await proxy.proxyText(url, res);
+    await proxy.proxyText(url, res, req.query.referer);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

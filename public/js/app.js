@@ -663,7 +663,9 @@ async function playEpisode(episode, btn, idx) {
   player.querySelectorAll('track').forEach((t) => t.remove());
 
   try {
-    const stream = await api(`/api/stream?url=${encodeURIComponent(episode.url)}`);
+    const stream = await api(
+      `/api/stream?url=${encodeURIComponent(episode.url)}&audio=${encodeURIComponent(Subtitles.getAudioPref())}`
+    );
     const src = stream.videoProxy;
 
     if (stream.type === 'hls' && window.Hls && Hls.isSupported()) {
