@@ -1,6 +1,9 @@
+const IS_CLOUD =
+  process.env.CLOUD_MODE === 'true' || !!process.env.RENDER || !!process.env.RAILWAY_ENVIRONMENT;
+
 module.exports = {
   PORT: parseInt(process.env.PORT, 10) || 3456,
-  CLOUD_MODE: process.env.CLOUD_MODE === 'true' || !!process.env.RENDER || !!process.env.RAILWAY_ENVIRONMENT,
+  CLOUD_MODE: IS_CLOUD,
   PUBLIC_URL: (
     process.env.PUBLIC_URL ||
     process.env.RENDER_EXTERNAL_URL ||
@@ -20,4 +23,8 @@ module.exports = {
   USER_AGENT:
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
   WYZIE_API_KEY: process.env.WYZIE_API_KEY || '',
+  // Saturn só como último recurso no modo legendado (PT-BR). Padrão: desligado na nuvem.
+  LEGENDADO_SATURN_FALLBACK:
+    process.env.LEGENDADO_SATURN_FALLBACK === 'true' ||
+    (!IS_CLOUD && process.env.LEGENDADO_SATURN_FALLBACK !== 'false'),
 };

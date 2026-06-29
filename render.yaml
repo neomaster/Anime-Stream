@@ -30,5 +30,8 @@ services:
         value: https://www.animeunity.to
       - key: ANIME_SATURN_BASE
         value: https://www.animesaturn.cx
+      # Saturn NÃO é fonte principal no legendado; só se LEGENDADO_SATURN_FALLBACK=true
+      - key: LEGENDADO_SATURN_FALLBACK
+        value: "false"
       - key: VAULT_SECRET
         generateValue: true

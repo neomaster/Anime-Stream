@@ -311,16 +311,29 @@ async function matchFromResults(results, jikanTitle, alternatives = [], options 
     }
   }
 
-  for (const candidate of saturnFallback.slice(0, 4)) {
-    try {
-      const match = await tryCandidate(candidate, matchOptions);
-      if (match) {
-        console.warn('[match-fallback] AnimeSaturn (Unity/AnimeFire indisponiveis na nuvem)');
-        return match;
+  const allowSaturnFallback =
+    matchOptions.audioPref === 'dublado' || config.LEGENDADO_SATURN_FALLBACK;
+
+  if (allowSaturnFallback) {
+    for (const candidate of saturnFallback.slice(0, 4)) {
+      try {
+        const match = await tryCandidate(candidate, matchOptions);
+        if (match) {
+          console.warn('[match-fallback] AnimeSaturn (AnimeFire/Unity indisponiveis na nuvem)');
+          return {
+            ...match,
+            fallbackProvider: 'animesaturn',
+            fallbackReason: 'animefire_unity_indisponivel',
+          };
+        }
+      } catch {
+        /* next */
       }
-    } catch {
-      /* next */
     }
+  } else if (saturnFallback.length) {
+    console.warn(
+      '[match-skip] AnimeSaturn ignorado no modo legendado (defina LEGENDADO_SATURN_FALLBACK=true para permitir)'
+    );
   }
 
   return null;

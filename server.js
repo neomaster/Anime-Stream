@@ -339,7 +339,7 @@ app.get('/api/anime/:malId', async (req, res) => {
 });
 
 async function resolveAnimeSource(malId, audioPref) {
-  const cacheKey = `source-match:v3:${malId}:${audioPref}`;
+  const cacheKey = `source-match:v4:${malId}:${audioPref}`;
   const cached = cache.get(cacheKey);
   if (cached) return cached;
 
@@ -368,7 +368,7 @@ app.get('/api/anime/:malId/episodes', async (req, res) => {
   try {
     const malId = parseInt(req.params.malId, 10);
     const audioPref = req.query.audio === 'dublado' ? 'dublado' : 'legendado';
-    const episodesKey = `episodes:v3:${malId}:${audioPref}`;
+    const episodesKey = `episodes:v4:${malId}:${audioPref}`;
     const cachedEpisodes = cache.get(episodesKey);
     if (cachedEpisodes) return res.json(cachedEpisodes);
 
@@ -436,8 +436,8 @@ async function resolveEpisodeStream(req, episodeUrl, audioPref, episodeNumber) {
 
   if (!needsFallback) return stream;
 
-  cache.del(`source-match:v3:${malId}:${audioPref}`);
-  cache.del(`episodes:v3:${malId}:${audioPref}`);
+  cache.del(`source-match:v4:${malId}:${audioPref}`);
+  cache.del(`episodes:v4:${malId}:${audioPref}`);
 
   const { sourceMatch } = await resolveAnimeSource(malId, audioPref);
   if (!sourceMatch?.url || sourceMatch.source === 'animesaturn') return stream;
