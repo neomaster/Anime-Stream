@@ -258,30 +258,20 @@ app.get('/api/anime/:malId', async (req, res) => {
     const cachedMeta = cache.get(cacheKey);
 
     let anime = cachedMeta?.anime;
-    if (!anime) {
-      try {
-        anime = await jikan.getAnimeById(malId);
-      } catch (err) {
-        return res.status(503).json({
-          error: 'Informações temporariamente indisponíveis. Tente novamente em instantes.',
-          detail: err.message,
-        });
-      }
-    }
+    let sourceMatch = null;
+    let altTitles = [];
 
-    const altTitles = [
-      anime.title_english,
-      anime.title_japanese,
-      ...(anime.synonyms || []),
-    ].filter(Boolean);
-    const sourceMatch = await streaming
-      .findBestMatch(anime.title, altTitles, {
-        audioPref,
-        malId: anime.mal_id,
-        expectedEpisodes: anime.episodes,
-        status: anime.status,
-      })
-      .catch(() => null);
+    try {
+      const resolved = await resolveAnimeSource(malId, audioPref);
+      anime = resolved.anime;
+      sourceMatch = resolved.sourceMatch;
+      altTitles = resolved.altTitles;
+    } catch (err) {
+      return res.status(503).json({
+        error: 'Informações temporariamente indisponíveis. Tente novamente em instantes.',
+        detail: err.message,
+      });
+    }
 
     let episodes = [];
     if (sourceMatch?.url) {
@@ -319,22 +309,41 @@ app.get('/api/anime/:malId', async (req, res) => {
   }
 });
 
+async function resolveAnimeSource(malId, audioPref) {
+  const cacheKey = `source-match:${malId}:${audioPref}`;
+  const cached = cache.get(cacheKey);
+  if (cached) return cached;
+
+  const anime = await jikan.getAnimeById(malId);
+  const altTitles = [
+    anime.title_english,
+    anime.title_japanese,
+    ...(anime.synonyms || []),
+  ].filter(Boolean);
+
+  const sourceMatch = await streaming.findBestMatch(anime.title, altTitles, {
+    audioPref,
+    malId: anime.mal_id,
+    expectedEpisodes: anime.episodes,
+    status: anime.status,
+  });
+
+  const payload = { anime, sourceMatch, altTitles };
+  if (sourceMatch?.url) {
+    cache.set(cacheKey, payload, 60 * 60 * 1000);
+  }
+  return payload;
+}
+
 app.get('/api/anime/:malId/episodes', async (req, res) => {
   try {
     const malId = parseInt(req.params.malId, 10);
-    const anime = await jikan.getAnimeById(malId);
-    const altTitles = [
-      anime.title_english,
-      anime.title_japanese,
-      ...(anime.synonyms || []),
-    ].filter(Boolean);
     const audioPref = req.query.audio === 'dublado' ? 'dublado' : 'legendado';
-    const sourceMatch = await streaming.findBestMatch(anime.title, altTitles, {
-      audioPref,
-      malId: anime.mal_id,
-      expectedEpisodes: anime.episodes,
-      status: anime.status,
-    });
+    const episodesKey = `episodes:${malId}:${audioPref}`;
+    const cachedEpisodes = cache.get(episodesKey);
+    if (cachedEpisodes) return res.json(cachedEpisodes);
+
+    const { sourceMatch } = await resolveAnimeSource(malId, audioPref);
 
     if (!sourceMatch?.url) {
       return res.json({
@@ -347,7 +356,9 @@ app.get('/api/anime/:malId/episodes', async (req, res) => {
     }
 
     const episodes = await streaming.getEpisodes(sourceMatch.url);
-    res.json({ source: sourceMatch, episodes, audioPref, found: true });
+    const payload = { source: sourceMatch, episodes, audioPref, found: true };
+    if (episodes.length) cache.set(episodesKey, payload, 45 * 60 * 1000);
+    res.json(payload);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

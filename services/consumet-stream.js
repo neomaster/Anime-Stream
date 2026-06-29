@@ -13,6 +13,7 @@ const {
 const { normalizeSubtitles, subtitleLangLabel } = require('./subtitles');
 const unityDirect = require('./animeunity-direct');
 const saturnDirect = require('./anime-saturn-direct');
+const cache = require('./cache');
 const config = require('../config');
 
 const PROVIDER_NAME = 'AnimeUnity';
@@ -139,11 +140,12 @@ function mergeSearchResults(lists, cap = 24) {
   return merged;
 }
 
-async function searchAnimeFireMulti(queries) {
-  const limit = config.CLOUD_MODE ? 10 : Math.min(queries.length, 14);
+async function searchAnimeFireMulti(queries, options = {}) {
+  const maxQueries = options.maxQueries ?? (config.CLOUD_MODE ? 5 : 14);
+  const limit = Math.min(queries.length, maxQueries);
   const batch = queries.slice(0, limit);
   const lists = await Promise.all(batch.map((q) => searchAnimeFire(q).catch(() => [])));
-  return mergeSearchResults(lists, config.CLOUD_MODE ? 24 : 20);
+  return mergeSearchResults(lists, config.CLOUD_MODE ? 20 : 20);
 }
 
 async function validateStreamUrl(url) {
@@ -165,23 +167,42 @@ async function validateStreamUrl(url) {
 }
 
 async function readCandidateMalId(animeRef) {
+  const cacheKey = `mal-ref:${animeRef}`;
+  const cached = cache.get(cacheKey);
+  if (cached !== undefined && cached !== null) return cached;
+
   try {
     const decoded = decodeRef(animeRef);
-    if (!decoded) return null;
+    if (!decoded) {
+      cache.set(cacheKey, null, 10 * 60 * 1000);
+      return null;
+    }
     const { info } = await fetchAnimeInfoByRef(decoded);
-    return info?.malID ? String(info.malID) : null;
+    const malId = info?.malID ? String(info.malID) : null;
+    cache.set(cacheKey, malId, 6 * 60 * 60 * 1000);
+    return malId;
   } catch {
+    cache.set(cacheKey, null, 5 * 60 * 1000);
     return null;
   }
 }
 
 async function getEpisodesForCandidate(candidate) {
+  const cacheKey = `eps-ref:${candidate.url}`;
+  const cached = cache.get(cacheKey);
+  if (cached) return cached;
+
   const isConsumet = String(candidate.url || '').startsWith(EP_PREFIX);
+  let eps;
   if (!isConsumet || candidate.source === 'animefire') {
     const goanime = require('./goanime');
-    return goanime.getEpisodes(candidate.url);
+    eps = await goanime.getEpisodes(candidate.url);
+  } else {
+    eps = await getEpisodes(candidate.url);
   }
-  return getEpisodes(candidate.url);
+
+  if (eps?.length) cache.set(cacheKey, eps, 45 * 60 * 1000);
+  return eps;
 }
 
 async function tryCandidate(candidate, options) {
@@ -197,6 +218,8 @@ async function tryCandidate(candidate, options) {
       expectedEpisodes: options.expectedEpisodes,
       status: options.status,
       episodes: eps,
+      matchScore: candidate.matchScore || 0,
+      fastPath: config.CLOUD_MODE && (candidate.matchScore || 0) >= 0.85,
     },
     readCandidateMalId
   );
@@ -244,13 +267,13 @@ async function matchFromResults(results, jikanTitle, alternatives = [], options 
         const isDub = /dublado|dub\b|_dub_/.test(ref);
 
         if (c.source === 'animefire') {
-          if (audioPref === 'dublado' && isDub) bonus += 0.16;
-          else if (audioPref === 'legendado' && !isDub) bonus += 0.14;
+          if (audioPref === 'dublado' && isDub) bonus += 0.2;
+          else if (audioPref === 'legendado' && !isDub) bonus += 0.18;
           else if (audioPref === 'legendado' && isDub) bonus -= 0.22;
-        } else if (c.source === 'animesaturn') {
-          bonus += audioPref === 'legendado' && !/sub_ita|_ita\b/i.test(ref) ? 0.08 : 0.04;
         } else if (c.source === 'animeunity') {
-          bonus += 0.06;
+          bonus += audioPref === 'legendado' ? 0.16 : 0.1;
+        } else if (c.source === 'animesaturn') {
+          bonus += audioPref === 'legendado' && !/sub_ita|_ita\b/i.test(ref) ? 0.04 : 0.02;
         }
 
         return { ...c, matchScore: c.matchScore + bonus };
@@ -258,7 +281,7 @@ async function matchFromResults(results, jikanTitle, alternatives = [], options 
       .sort((a, b) => b.matchScore - a.matchScore);
   }
 
-  const tryLimit = useDirectUnity() ? 10 : 12;
+  const tryLimit = useDirectUnity() ? 5 : 12;
   for (const candidate of ranked.slice(0, tryLimit)) {
     try {
       const match = await tryCandidate(candidate, matchOptions);
@@ -394,6 +417,7 @@ async function fetchEpisodeStreamFromRef(decoded, options = {}) {
     const data = await unityDirect.fetchEpisodeSources(decoded.id);
     sources = data.sources || [];
     rawSubtitles = data.subtitles || [];
+    streamReferer = data.headers?.Referer || null;
     streamMeta = {
       audioMode: data.audioMode || 'legendado',
       subtitleLang: data.subtitleLang || null,
@@ -443,15 +467,19 @@ async function getEpisodeStream(episodeRef, options = {}) {
   const decoded = decodeRef(episodeRef);
   if (!decoded) throw new Error('Episodio invalido');
 
-  const refCheck = validateEpisodeRef(episodeRef, options.episodeNumber);
-  if (!refCheck.ok) throw new Error(refCheck.reason || 'Episodio invalido');
+  if (!config.CLOUD_MODE) {
+    const refCheck = validateEpisodeRef(episodeRef, options.episodeNumber);
+    if (!refCheck.ok) throw new Error(refCheck.reason || 'Episodio invalido');
+  }
 
   const stream = await fetchEpisodeStreamFromRef(decoded, options);
 
-  const urlCheck = validateStreamUrlEpisode(stream.videoUrl, options.episodeNumber);
-  if (!urlCheck.ok) {
-    console.warn('[stream-reject]', urlCheck.reason, stream.videoUrl?.slice(0, 100));
-    throw new Error(urlCheck.reason || 'Video nao corresponde ao episodio');
+  if (!config.CLOUD_MODE) {
+    const urlCheck = validateStreamUrlEpisode(stream.videoUrl, options.episodeNumber);
+    if (!urlCheck.ok) {
+      console.warn('[stream-reject]', urlCheck.reason, stream.videoUrl?.slice(0, 100));
+      throw new Error(urlCheck.reason || 'Video nao corresponde ao episodio');
+    }
   }
   return {
     ...stream,

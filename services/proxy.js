@@ -75,17 +75,34 @@ async function fetchUpstream(targetUrl, req, referer) {
   return fetch(targetUrl, { headers, timeout: 60000 });
 }
 
-async function proxyStream(targetUrl, req, res) {
-  const referer = getReferer(targetUrl, req.query.referer);
-  let response = await fetchUpstream(targetUrl, req, referer);
+function refererCandidates(targetUrl, override) {
+  const primary = getReferer(targetUrl, override);
+  const list = [primary];
 
-  if (!response.ok && response.status >= 400) {
-    const altReferer = referer.includes('animesaturn.cx')
-      ? referer.replace('animesaturn.cx', 'www.animesaturn.cx')
-      : referer;
-    if (altReferer !== referer) {
-      response = await fetchUpstream(targetUrl, req, altReferer);
+  try {
+    const host = new URL(targetUrl).hostname;
+    if (host.includes('streampeaker') || host.includes('neko.')) {
+      list.push(SATURN_BASE, 'https://www.animesaturn.cx/', 'https://animesaturn.cx/');
     }
+    if (host.includes('vixcloud')) {
+      list.push(UNITY_BASE, 'https://www.animeunity.to/', config.ANIMEFIRE_BASE);
+    }
+  } catch {
+    /* ignore */
+  }
+
+  return [...new Set(list.filter(Boolean))];
+}
+
+async function proxyStream(targetUrl, req, res) {
+  const candidates = refererCandidates(targetUrl, req.query.referer);
+  let response = null;
+  let referer = candidates[0];
+
+  for (const candidate of candidates) {
+    referer = candidate;
+    response = await fetchUpstream(targetUrl, req, candidate);
+    if (response.ok) break;
   }
 
   if (!response.ok) {

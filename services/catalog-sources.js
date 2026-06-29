@@ -25,26 +25,36 @@ async function searchCatalog(query) {
   return mergeByUrl([international, animefire], 16);
 }
 
-async function searchCatalogMulti(queries) {
-  const limit = config.CLOUD_MODE ? 12 : Math.min(queries.length, 14);
+async function searchCatalogMulti(queries, maxQueries) {
+  const limit = maxQueries ?? (config.CLOUD_MODE ? 5 : Math.min(queries.length, 14));
   const batch = queries.slice(0, limit);
   const lists = await Promise.all(batch.map((q) => searchCatalog(q)));
-  return mergeByUrl(lists, config.CLOUD_MODE ? 36 : 28);
+  return mergeByUrl(lists, config.CLOUD_MODE ? 28 : 28);
 }
 
 async function findBestMatch(jikanTitle, alternatives = [], options = {}) {
   const titles = [jikanTitle, ...alternatives].filter(Boolean);
   const queries = buildPrioritizedQueries(titles);
+  const fastCount = config.CLOUD_MODE ? 3 : 6;
 
-  let results = await searchCatalogMulti(queries);
+  let results = await searchCatalogMulti(queries, fastCount);
+  let match = await consumet.matchFromResults(results, jikanTitle, alternatives, options);
+  if (match) return match;
+
+  if (queries.length > fastCount) {
+    results = await searchCatalogMulti(queries);
+    match = await consumet.matchFromResults(results, jikanTitle, alternatives, options);
+    if (match) return match;
+  }
 
   if (!results.length && queries.length) {
     const fallback = queries.slice(0, 4);
     const lists = await Promise.all(fallback.map((q) => searchCatalog(q)));
     results = mergeByUrl(lists, 24);
+    return consumet.matchFromResults(results, jikanTitle, alternatives, options);
   }
 
-  return consumet.matchFromResults(results, jikanTitle, alternatives, options);
+  return null;
 }
 
 module.exports = {

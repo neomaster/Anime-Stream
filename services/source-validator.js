@@ -83,12 +83,15 @@ async function validateSourceCandidate(candidate, context, readMalId) {
     expectedEpisodes,
     status,
     episodes = [],
+    matchScore = 0,
+    fastPath = false,
   } = context;
 
   const titles = altTitles.filter(Boolean);
   const expected = normalizeMalId(expectedMalId);
+  const trustTitle = fastPath || matchScore >= 0.88;
 
-  if (expected && readMalId) {
+  if (expected && readMalId && !trustTitle) {
     const sourceMalId = normalizeMalId(await readMalId(candidate.url));
     if (sourceMalId) {
       if (sourceMalId !== expected) {
@@ -102,6 +105,11 @@ async function validateSourceCandidate(candidate, context, readMalId) {
           reason: `Titulo insuficiente sem MAL ID (${titleCheck.score?.toFixed(2)})`,
         };
       }
+    }
+  } else if (expected && trustTitle) {
+    const titleCheck = validateTitleMatch(candidate.name, titles, jikanTitle);
+    if (!titleCheck.ok && titleCheck.score < 0.75) {
+      return { ok: false, reason: `Titulo insuficiente (${titleCheck.score?.toFixed(2)})` };
     }
   } else {
     const titleCheck = validateTitleMatch(candidate.name, titles, jikanTitle);

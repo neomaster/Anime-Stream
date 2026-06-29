@@ -154,6 +154,7 @@ async function fetchEpisodeSources(episodeId) {
   return {
     sources,
     subtitles,
+    headers: { Referer: embedUrl, 'User-Agent': config.USER_AGENT },
     ...streamMeta,
   };
 }

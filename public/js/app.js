@@ -305,29 +305,25 @@ async function openAnime(malId) {
   $('#episodesGrid').innerHTML = '<p class="ep-empty">Carregando episódios…</p>';
 
   const audio = encodeURIComponent(Subtitles.getAudioPref());
-  const streamPath = `/api/anime/${malId}/episodes?audio=${audio}`;
 
   try {
-    const meta = await api(`/api/anime/${malId}/meta`, { timeoutMs: 20000 });
+    const data = await api(`/api/anime/${malId}?audio=${audio}`, { timeoutMs: 180000 });
     if (isStale()) return;
 
-    const anime = meta.anime;
+    const anime = data.anime;
     state.currentAnime = anime;
+    state.sourceUrl = data.source?.url || null;
     setAnimeKey(malId, null, anime.title, anime.poster);
     renderAnimeMeta(anime);
-    renderDetailCommon({
-      title: anime.title,
-      synopsis: anime.synopsis,
-      poster: anime.poster,
-      source: null,
-      episodes: [],
-    });
-    $('#detailSynopsis').textContent = 'Buscando episódios nas fontes de streaming…';
 
-    const stream = await api(streamPath, { timeoutMs: 90000 });
-    if (isStale()) return;
-
-    if (!stream?.found && !stream?.source) {
+    if (!data.episodes?.length && !data.source?.url) {
+      renderDetailCommon({
+        title: anime.title,
+        synopsis: anime.synopsis,
+        poster: anime.poster,
+        source: null,
+        episodes: [],
+      });
       $('#sourceBadge').textContent = '⚠ Não encontrado nas fontes de streaming';
       $('#episodesGrid').innerHTML =
         '<p class="ep-empty">Nenhum episódio encontrado nas fontes disponíveis.</p>';
@@ -340,8 +336,8 @@ async function openAnime(malId) {
       title: anime.title,
       synopsis: anime.synopsis,
       poster: anime.poster,
-      source: stream.source,
-      episodes: stream.episodes,
+      source: data.source,
+      episodes: data.episodes,
     });
   } catch (err) {
     if (isStale()) return;
