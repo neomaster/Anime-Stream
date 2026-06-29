@@ -1,6 +1,6 @@
 {
   "name": "anime-stream-magnet",
-  "version": "2.1.1-magnet",
+  "version": "2.1.2-magnet",
   "description": "Fork do Anime Stream com fontes alternativas via índice 1337x (refs ofuscadas)",
   "main": "server.js",
   "engines": {

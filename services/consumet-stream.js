@@ -370,7 +370,7 @@ async function getEpisodes(animeRef) {
     const num = ep.number > 0 ? ep.number : parseEpisodeNumber(epId, i);
     return {
       number: num,
-      label: ep.title || `Episodio ${num}`,
+      label: ep.title || `Episódio ${num}`,
       url: encodeRef(providerName, epId, animeId),
     };
   });

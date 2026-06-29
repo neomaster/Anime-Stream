@@ -258,9 +258,15 @@ function resumeEpisode(progress) {
   }
 }
 
-function renderDetailCommon({ title, synopsis, poster, source, episodes }) {
+function renderDetailCommon({ title, synopsis, synopsisFull, poster, source, episodes }) {
   $('#detailTitle').textContent = title;
-  $('#detailSynopsis').textContent = synopsis || 'Sinopse não disponível.';
+  const synEl = $('#detailSynopsis');
+  synEl.textContent = synopsis || 'Sinopse não disponível.';
+  if (synopsisFull && synopsisFull.length > synopsis.length) {
+    synEl.title = synopsisFull;
+  } else {
+    synEl.removeAttribute('title');
+  }
   $('#detailPoster').src = poster || '';
   $('#detailPoster').alt = title;
   $('#detailBackdrop').style.backgroundImage = poster ? `url(${poster})` : '';
@@ -280,12 +286,16 @@ function renderDetailCommon({ title, synopsis, poster, source, episodes }) {
   updateContinueBtn();
 }
 
+function displayTitle(anime) {
+  return anime.displayTitle || anime.title || '';
+}
+
 function renderAnimeMeta(anime) {
   $('#detailMeta').innerHTML = `
     ${anime.score ? `<span>★ ${anime.score}</span>` : ''}
     ${anime.type ? `<span>${anime.type}</span>` : ''}
-    ${anime.episodes ? `<span>${anime.episodes} eps</span>` : ''}
-    ${anime.status ? `<span>${anime.status}</span>` : ''}
+    ${anime.episodes ? `<span>${anime.episodes} episódios</span>` : ''}
+    ${anime.statusLabel || anime.status ? `<span>${escapeHtml(anime.statusLabel || anime.status)}</span>` : ''}
     <div>${(anime.genres || []).map((g) => `<span class="tag">${escapeHtml(g)}</span>`).join('')}</div>
   `;
 }
@@ -307,19 +317,37 @@ async function openAnime(malId) {
   const audio = encodeURIComponent(Subtitles.getAudioPref());
 
   try {
+    const meta = await api(`/api/anime/${malId}/meta`, { timeoutMs: 20000 });
+    if (isStale()) return;
+
+    let anime = meta.anime;
+    state.currentAnime = anime;
+    setAnimeKey(malId, null, displayTitle(anime), anime.poster);
+    renderAnimeMeta(anime);
+    renderDetailCommon({
+      title: displayTitle(anime),
+      synopsis: anime.synopsis,
+      synopsisFull: anime.synopsisFull,
+      poster: anime.poster,
+      source: null,
+      episodes: [],
+    });
+    $('#detailSynopsis').textContent = 'Buscando episódios nas fontes de streaming…';
+
     const data = await api(`/api/anime/${malId}?audio=${audio}`, { timeoutMs: 180000 });
     if (isStale()) return;
 
-    const anime = data.anime;
+    anime = data.anime;
     state.currentAnime = anime;
     state.sourceUrl = data.source?.url || null;
-    setAnimeKey(malId, null, anime.title, anime.poster);
+    setAnimeKey(malId, null, displayTitle(anime), anime.poster);
     renderAnimeMeta(anime);
 
     if (!data.episodes?.length && !data.source?.url) {
       renderDetailCommon({
-        title: anime.title,
+        title: displayTitle(anime),
         synopsis: anime.synopsis,
+        synopsisFull: anime.synopsisFull,
         poster: anime.poster,
         source: null,
         episodes: [],
@@ -333,8 +361,9 @@ async function openAnime(malId) {
     if (state.malId && String(state.malId) !== String(malId)) return;
 
     renderDetailCommon({
-      title: anime.title,
+      title: displayTitle(anime),
       synopsis: anime.synopsis,
+      synopsisFull: anime.synopsisFull,
       poster: anime.poster,
       source: data.source,
       episodes: data.episodes,

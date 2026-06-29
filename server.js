@@ -12,6 +12,8 @@ const { normalizeSubtitles } = require('./services/subtitles');
 const torrentSources = require('./services/torrent-sources');
 const torrentStream = require('./services/torrent-stream');
 const altPublic = require('./services/alt-public');
+const { localizeAnime } = require('./services/locale-pt');
+const { fetchSourceSynopsis } = require('./services/source-meta');
 
 const app = express();
 const pkg = require('./package.json');
@@ -255,7 +257,7 @@ app.get('/api/anime/:malId/meta', async (req, res) => {
       anime = await jikan.getAnimeById(malId);
       cache.set(cacheKey, { anime }, 30 * 60 * 1000);
     }
-    res.json({ anime });
+    res.json({ anime: localizeAnime(anime, null, null) });
   } catch (err) {
     res.status(503).json({
       error: 'Informações temporariamente indisponíveis. Tente novamente em instantes.',
@@ -268,7 +270,7 @@ app.get('/api/anime/:malId', async (req, res) => {
   try {
     const malId = parseInt(req.params.malId, 10);
     const audioPref = req.query.audio === 'dublado' ? 'dublado' : 'legendado';
-    const detailKey = `anime-detail:v3:${malId}:${audioPref}`;
+    const detailKey = `anime-detail:v4:${malId}:${audioPref}`;
     const cachedDetail = cache.get(detailKey);
     if (cachedDetail) return res.json(cachedDetail);
 
@@ -292,9 +294,17 @@ app.get('/api/anime/:malId', async (req, res) => {
     }
 
     let episodes = [];
+    let sourceSynopsis = null;
     if (sourceMatch?.url) {
-      episodes = await streaming.getEpisodes(sourceMatch.url).catch(() => []);
+      const [eps, synopsis] = await Promise.all([
+        streaming.getEpisodes(sourceMatch.url).catch(() => []),
+        fetchSourceSynopsis(sourceMatch).catch(() => null),
+      ]);
+      episodes = eps;
+      sourceSynopsis = synopsis;
     }
+
+    const localizedAnime = localizeAnime(anime, sourceMatch, sourceSynopsis);
 
     // Catálogo magnet por título é carregado sob demanda em /api/alt/episode (evita timeout na nuvem).
     const altCatalog = { items: [], provider: altPublic.PUBLIC_PROVIDER };
@@ -307,7 +317,7 @@ app.get('/api/anime/:malId', async (req, res) => {
     }
 
     const payload = {
-      anime,
+      anime: localizedAnime,
       source: sourceMatch,
       episodes,
       altCatalog: altPublic.publicCatalog(altCatalog),

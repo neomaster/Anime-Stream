@@ -440,8 +440,17 @@ async function getAnimeFromSource(sourceUrl) {
 
   const img = $('meta[property="og:image"]').attr('content') ||
     $('.div_img img, .anime-cover img').first().attr('src');
-  const synopsis = $('meta[property="og:description"]').attr('content') ||
-    $('.sinopse, .synopsis, .descricao').first().text().trim() || '';
+  const bodySynopsis = $('.sinopse, .synopsis, .descricao, #sinopse, .text-sinopse')
+    .first()
+    .text()
+    .trim();
+  const ogSynopsis = $('meta[property="og:description"]').attr('content') || '';
+  const synopsis =
+    bodySynopsis && !/assistir.*epis[oó]dios/i.test(bodySynopsis)
+      ? bodySynopsis
+      : ogSynopsis && !/assistir.*epis[oó]dios/i.test(ogSynopsis)
+        ? ogSynopsis
+        : bodySynopsis || '';
 
   const episodes = await getEpisodes(sourceUrl);
 
