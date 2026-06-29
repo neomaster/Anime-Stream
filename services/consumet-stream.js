@@ -116,7 +116,7 @@ async function searchAnimeFire(query) {
     ]);
     const saturn = saturnSettled.status === 'fulfilled' ? saturnSettled.value : [];
     const unity = unitySettled.status === 'fulfilled' ? unitySettled.value : [];
-    return [...saturn, ...unity];
+    return [...unity, ...saturn];
   }
 
   try {
@@ -205,7 +205,17 @@ async function getEpisodesForCandidate(candidate) {
   return eps;
 }
 
+function isCloudBlockedSource(candidate) {
+  if (!config.CLOUD_MODE) return false;
+  return candidate?.source === 'animesaturn';
+}
+
 async function tryCandidate(candidate, options) {
+  if (isCloudBlockedSource(candidate)) {
+    console.warn('[match-skip] AnimeSaturn ignorado na nuvem (CDN bloqueado no datacenter)');
+    return null;
+  }
+
   const eps = await getEpisodesForCandidate(candidate);
   if (!eps.length) return null;
 

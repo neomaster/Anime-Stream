@@ -5,7 +5,10 @@ services:
     name: anime-stream
     runtime: node
     plan: free
-    buildCommand: npm ci --omit=dev
+    repo: https://github.com/neomaster/Anime-Stream
+    branch: main
+    autoDeploy: true
+    buildCommand: npm ci --omit=dev && node scripts/write-build-info.js
     startCommand: node server.js
     healthCheckPath: /api/health
     envVars:

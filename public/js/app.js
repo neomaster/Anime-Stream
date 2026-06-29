@@ -670,8 +670,9 @@ async function playEpisode(episode, btn, idx) {
   player.querySelectorAll('track').forEach((t) => t.remove());
 
   try {
+    const malParam = state.malId ? `&mal=${encodeURIComponent(state.malId)}` : '';
     const stream = await api(
-      `/api/stream?url=${encodeURIComponent(episode.url)}&audio=${encodeURIComponent(Subtitles.getAudioPref())}&ep=${encodeURIComponent(episode.number)}`
+      `/api/stream?url=${encodeURIComponent(episode.url)}&audio=${encodeURIComponent(Subtitles.getAudioPref())}&ep=${encodeURIComponent(episode.number)}${malParam}`
     );
     if (isStale()) return;
 

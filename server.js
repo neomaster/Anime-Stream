@@ -15,6 +15,16 @@ const altPublic = require('./services/alt-public');
 
 const app = express();
 const pkg = require('./package.json');
+const fs = require('fs');
+
+let buildInfo = { commit: 'dev', version: pkg.version, builtAt: null };
+try {
+  buildInfo = { ...buildInfo, ...JSON.parse(fs.readFileSync(path.join(__dirname, 'build-info.json'), 'utf8')) };
+} catch {
+  /* local dev */
+}
+
+const BLOCKED_CDN_RE = /streampeaker|neko\./i;
 
 if (config.CLOUD_MODE) {
   app.set('trust proxy', 1);
@@ -74,6 +84,7 @@ app.get('/api/health', (req, res) => {
       ? [publicUrl]
       : ips.map((ip) => `${ip}:${config.PORT}`),
     streaming: streaming.mode(),
+    build: buildInfo,
     goanime: streaming.goanimeAvailable(),
     altSources: config.ALT_SOURCES_ENABLED,
     altProvider: config.ALT_SOURCES_ENABLED ? altPublic.PUBLIC_PROVIDER : null,
@@ -121,6 +132,11 @@ app.get('/api/debug/probe', async (_req, res) => {
     const rows = await nyaa.searchIndex(['Sousou no Frieren'], 5);
     return { base: nyaa.getBase(), count: rows.length, sample: rows[0]?.name || null };
   });
+  await timed('unitySearch', async () => {
+    const unityDirect = require('./services/animeunity-direct');
+    const r = await unityDirect.search('frieren');
+    return r.slice(0, 3).map((x) => x.title);
+  });
   await timed('saturnSearch', async () => {
     const r = await consumet.searchAnimeFire('steel ball run');
     return r.map((x) => ({ name: x.name, source: x.source }));
@@ -133,9 +149,11 @@ app.get('/api/debug/probe', async (_req, res) => {
   await timed('matchFrieren', async () => {
     const m = await streaming.findBestMatch('Sousou no Frieren', [
       "Frieren: Beyond Journey's End",
-    ]);
-    return m ? { name: m.name, url: String(m.url).slice(0, 80) } : null;
+    ], { malId: 52991 });
+    return m ? { name: m.name, source: m.source, url: String(m.url).slice(0, 80) } : null;
   });
+  out.build = buildInfo;
+  out.streaming = streaming.mode();
   await timed('matchYoujitsuS4', async () => {
     const m = await streaming.findBestMatch(
       'Youkoso Jitsuryoku Shijou Shugi no Kyoushitsu e 4th Season: 2-nensei-hen 1 Gakki',
@@ -250,9 +268,9 @@ app.get('/api/anime/:malId', async (req, res) => {
   try {
     const malId = parseInt(req.params.malId, 10);
     const audioPref = req.query.audio === 'dublado' ? 'dublado' : 'legendado';
-    const detailKey = `anime-detail:${malId}:${audioPref}`;
+    const detailKey = `anime-detail:v2:${malId}:${audioPref}`;
     const cachedDetail = cache.get(detailKey);
-    if (cachedDetail) return res.json(cachedDetail);
+    if (cachedDetail && !isStaleCloudSource(cachedDetail.source)) return res.json(cachedDetail);
 
     const cacheKey = `anime-${malId}`;
     const cachedMeta = cache.get(cacheKey);
@@ -309,10 +327,14 @@ app.get('/api/anime/:malId', async (req, res) => {
   }
 });
 
+function isStaleCloudSource(sourceMatch) {
+  return config.CLOUD_MODE && sourceMatch?.source === 'animesaturn';
+}
+
 async function resolveAnimeSource(malId, audioPref) {
-  const cacheKey = `source-match:${malId}:${audioPref}`;
+  const cacheKey = `source-match:v2:${malId}:${audioPref}`;
   const cached = cache.get(cacheKey);
-  if (cached) return cached;
+  if (cached && !isStaleCloudSource(cached.sourceMatch)) return cached;
 
   const anime = await jikan.getAnimeById(malId);
   const altTitles = [
@@ -339,9 +361,11 @@ app.get('/api/anime/:malId/episodes', async (req, res) => {
   try {
     const malId = parseInt(req.params.malId, 10);
     const audioPref = req.query.audio === 'dublado' ? 'dublado' : 'legendado';
-    const episodesKey = `episodes:${malId}:${audioPref}`;
+    const episodesKey = `episodes:v2:${malId}:${audioPref}`;
     const cachedEpisodes = cache.get(episodesKey);
-    if (cachedEpisodes) return res.json(cachedEpisodes);
+    if (cachedEpisodes && !isStaleCloudSource(cachedEpisodes.source)) {
+      return res.json(cachedEpisodes);
+    }
 
     const { sourceMatch } = await resolveAnimeSource(malId, audioPref);
 
@@ -372,6 +396,33 @@ function buildVideoProxyUrl(req, videoUrl, referer) {
   return out;
 }
 
+async function resolveEpisodeStream(req, episodeUrl, audioPref, episodeNumber) {
+  const opts = { audioPref, episodeNumber };
+  let stream = await streaming.getEpisodeStream(episodeUrl, opts);
+
+  const needsFallback =
+    config.CLOUD_MODE &&
+    BLOCKED_CDN_RE.test(stream.videoUrl || '') &&
+    parseInt(req.query.mal, 10) > 0 &&
+    episodeNumber > 0;
+
+  if (!needsFallback) return stream;
+
+  const malId = parseInt(req.query.mal, 10);
+  cache.del(`source-match:v2:${malId}:${audioPref}`);
+  cache.del(`episodes:v2:${malId}:${audioPref}`);
+
+  const { sourceMatch } = await resolveAnimeSource(malId, audioPref);
+  if (!sourceMatch?.url || sourceMatch.source === 'animesaturn') return stream;
+
+  const episodes = await streaming.getEpisodes(sourceMatch.url);
+  const ep = episodes.find((e) => e.number === episodeNumber);
+  if (!ep?.url) return stream;
+
+  console.warn('[stream-fallback] Saturn CDN bloqueado, usando', sourceMatch.source);
+  return streaming.getEpisodeStream(ep.url, opts);
+}
+
 app.get('/api/stream', async (req, res) => {
   try {
     const episodeUrl = req.query.url;
@@ -379,7 +430,7 @@ app.get('/api/stream', async (req, res) => {
 
     const audioPref = req.query.audio === 'dublado' ? 'dublado' : 'legendado';
     const episodeNumber = parseInt(req.query.ep, 10) || null;
-    const stream = await streaming.getEpisodeStream(episodeUrl, { audioPref, episodeNumber });
+    const stream = await resolveEpisodeStream(req, episodeUrl, audioPref, episodeNumber);
     const referer = stream.streamReferer || null;
 
     stream.videoProxy = buildVideoProxyUrl(req, stream.videoUrl, referer);
