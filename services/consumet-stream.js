@@ -18,6 +18,17 @@ const config = require('../config');
 
 const PROVIDER_NAME = 'AnimeUnity';
 const EP_PREFIX = 'consumet:';
+const SOURCE_PRIORITY = { animefire: 0, animeunity: 1, animesaturn: 2 };
+
+function sourceRank(candidate) {
+  return SOURCE_PRIORITY[candidate?.source] ?? 9;
+}
+
+function sortByScoreAndSource(list) {
+  return [...list].sort(
+    (a, b) => b.matchScore - a.matchScore || sourceRank(a) - sourceRank(b)
+  );
+}
 
 let animeModule = null;
 
@@ -267,23 +278,25 @@ async function matchFromResults(results, jikanTitle, alternatives = [], options 
         const isDub = /dublado|dub\b|_dub_/.test(ref);
 
         if (c.source === 'animefire') {
-          if (audioPref === 'dublado' && isDub) bonus += 0.2;
-          else if (audioPref === 'legendado' && !isDub) bonus += 0.18;
-          else if (audioPref === 'legendado' && isDub) bonus -= 0.22;
+          if (audioPref === 'dublado' && isDub) bonus += 0.24;
+          else if (audioPref === 'legendado' && !isDub) bonus += 0.28;
+          else if (audioPref === 'legendado' && isDub) bonus -= 0.3;
         } else if (c.source === 'animeunity') {
-          bonus += audioPref === 'legendado' ? 0.16 : 0.1;
+          bonus += audioPref === 'legendado' ? 0.12 : 0.08;
         } else if (c.source === 'animesaturn') {
-          bonus += audioPref === 'legendado' && !/sub_ita|_ita\b/i.test(ref) ? 0.06 : 0.03;
+          bonus += audioPref === 'legendado' && !/sub_ita|_ita\b/i.test(ref) ? 0.04 : 0.02;
         }
 
         return { ...c, matchScore: c.matchScore + bonus };
-      })
-      .sort((a, b) => b.matchScore - a.matchScore);
+      });
+    ranked = sortByScoreAndSource(ranked);
+  } else {
+    ranked = sortByScoreAndSource(ranked);
   }
 
-  const tryLimit = useDirectUnity() ? 5 : 12;
+  const tryLimit = useDirectUnity() ? 6 : 12;
   const primary = config.CLOUD_MODE
-    ? ranked.filter((c) => c.source !== 'animesaturn')
+    ? sortByScoreAndSource(ranked.filter((c) => c.source !== 'animesaturn'))
     : ranked;
   const saturnFallback = config.CLOUD_MODE
     ? ranked.filter((c) => c.source === 'animesaturn')

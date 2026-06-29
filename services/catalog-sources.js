@@ -18,11 +18,11 @@ function mergeByUrl(lists, cap = 32) {
 }
 
 async function searchCatalog(query) {
-  const [international, animefire] = await Promise.all([
-    consumet.searchAnimeFire(query).catch(() => []),
+  const [animefire, international] = await Promise.all([
     goanime.searchAnimeFire(query).catch(() => []),
+    consumet.searchAnimeFire(query).catch(() => []),
   ]);
-  return mergeByUrl([international, animefire], 16);
+  return mergeByUrl([animefire, international], 16);
 }
 
 async function searchCatalogMulti(queries, maxQueries) {
@@ -51,7 +51,13 @@ async function findBestMatch(jikanTitle, alternatives = [], options = {}) {
     const fallback = queries.slice(0, 4);
     const lists = await Promise.all(fallback.map((q) => searchCatalog(q)));
     results = mergeByUrl(lists, 24);
-    return consumet.matchFromResults(results, jikanTitle, alternatives, options);
+    match = await consumet.matchFromResults(results, jikanTitle, alternatives, options);
+    if (match) return match;
+  }
+
+  if (options.audioPref !== 'dublado') {
+    const afMatch = await goanime.findBestMatch(jikanTitle, alternatives, options);
+    if (afMatch) return { ...afMatch, source: 'animefire' };
   }
 
   return null;

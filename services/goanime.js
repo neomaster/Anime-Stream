@@ -40,7 +40,7 @@ const {
   rankCandidates,
   titleSimilarity,
 } = matcher;
-const { normalizeSubtitles } = require('./subtitles');
+const { normalizeSubtitles, subtitleLangLabel } = require('./subtitles');
 
 async function fetchPage(url, attempt = 0) {
   const res = await fetch(url, {
@@ -202,6 +202,69 @@ function detectType(url) {
   return 'stream';
 }
 
+function parseEpisodeRef(episodeUrl) {
+  const m = String(episodeUrl || '').match(/\/animes\/([^/]+)\/(\d+)/i);
+  if (!m) return null;
+  return { slug: m[1], episode: parseInt(m[2], 10) };
+}
+
+function buildVideoApiUrl(slug, episode) {
+  return `${config.ANIMEFIRE_BASE}/video/${slug}/${episode}?tempsubs=1`;
+}
+
+function collectApiSubtitles(apiData) {
+  const subtitles = [];
+  const rawLists = [
+    apiData?.subtitles,
+    apiData?.legendas,
+    apiData?.temp_subtitles,
+    apiData?.metadata?.subtitles,
+    apiData?.metadata?.legendas,
+  ];
+
+  for (const raw of rawLists) {
+    if (!raw) continue;
+    const list = Array.isArray(raw) ? raw : Object.values(raw);
+    for (const sub of list) {
+      if (!sub) continue;
+      const url = sub.src || sub.url || sub.link;
+      if (!url) continue;
+      subtitles.push({
+        url,
+        label: sub.label || sub.lang || sub.language || 'Português (BR)',
+        format: String(url).endsWith('.srt') ? 'srt' : 'vtt',
+        lang: 'pt-BR',
+      });
+    }
+  }
+
+  return subtitles;
+}
+
+function detectEmbeddedPtSubs({ videoUrl, videoPageUrl, html, apiData }) {
+  const hay = `${videoUrl || ''} ${videoPageUrl || ''} ${html || ''}`;
+  if (/mp4_temp|tempsubs=1/i.test(hay)) return true;
+  if (/name="audio"\s+value="Legendado"/i.test(html || '')) return true;
+  if (apiData?.tempsubs || apiData?.metadata?.tempsubs) return true;
+  return false;
+}
+
+function applySubtitleHints(stream, hints = {}) {
+  const subtitles = normalizeSubtitles(stream.subtitles || []);
+  const embedded = hints.embedded && !subtitles.length;
+
+  return {
+    ...stream,
+    subtitles,
+    embeddedSubtitles: embedded || stream.embeddedSubtitles || false,
+    subtitleLang: embedded ? 'pt-BR' : stream.subtitleLang || null,
+    subtitleLangLabel: embedded
+      ? subtitleLangLabel('pt-BR')
+      : stream.subtitleLangLabel || null,
+    audioMode: hints.legendado ? 'legendado' : stream.audioMode || 'legendado',
+  };
+}
+
 function parseAnimeFireSearchHtml(html) {
   const $ = cheerio.load(html);
   const results = [];
@@ -334,47 +397,72 @@ function pickBestQuality(sources) {
 }
 
 async function resolveAnimeFireStream(episodeUrl) {
-  const html = await fetchPage(episodeUrl);
-  const $ = cheerio.load(html);
+  const epRef = parseEpisodeRef(episodeUrl);
+  let html = '';
+  let $ = null;
 
-  let videoPageUrl = $('[data-video-src]').first().attr('data-video-src');
-  if (!videoPageUrl) {
-    const fallback = extractVideoSources($, html);
-    if (!fallback) throw new Error('Nenhuma fonte de vídeo encontrada');
-    return { ...fallback, subtitles: extractSubtitles(html), qualities: [] };
+  try {
+    html = await fetchPage(episodeUrl);
+    $ = cheerio.load(html);
+  } catch (err) {
+    if (!epRef) throw err;
+    console.warn('[AnimeFire] página indisponível, tentando API direta:', err.message);
   }
 
+  let videoPageUrl = $?.('[data-video-src]').first().attr('data-video-src') || '';
+  if (!videoPageUrl && epRef) {
+    videoPageUrl = buildVideoApiUrl(epRef.slug, epRef.episode);
+  }
   videoPageUrl = resolveUrl(config.ANIMEFIRE_BASE, videoPageUrl);
 
-  const apiData = await fetchVideoApi(videoPageUrl);
+  const apiData = await fetchVideoApi(videoPageUrl).catch(() => null);
   if (apiData?.data?.length) {
     const best = pickBestQuality(apiData.data);
-    const subtitles = [];
-
-    if (apiData.subtitles) {
-      for (const sub of apiData.subtitles) {
-        subtitles.push({
-          url: sub.src || sub.url,
-          label: sub.label || sub.lang || 'Legenda',
-          format: 'vtt',
-        });
-      }
-    }
-
-    return {
+    const apiSubs = collectApiSubtitles(apiData);
+    const htmlSubs = html ? extractSubtitles(html) : [];
+    const subtitles = apiSubs.length ? apiSubs : htmlSubs;
+    const embedded = detectEmbeddedPtSubs({
       videoUrl: best.url,
-      type: detectType(best.url),
-      quality: best.label,
-      qualities: apiData.data.map((s) => ({ url: s.src, label: s.label })),
-      subtitles: subtitles.length ? subtitles : extractSubtitles(html),
-      metadata: apiData.metadata || {},
-    };
+      videoPageUrl,
+      html,
+      apiData,
+    });
+
+    return applySubtitleHints(
+      {
+        videoUrl: best.url,
+        type: detectType(best.url),
+        quality: best.label,
+        qualities: apiData.data.map((s) => ({ url: s.src, label: s.label })),
+        subtitles,
+        metadata: apiData.metadata || {},
+        streamReferer: config.ANIMEFIRE_BASE,
+      },
+      { embedded, legendado: true }
+    );
   }
 
-  const video = extractVideoSources($, html);
-  if (!video) throw new Error('Nenhuma fonte de vídeo encontrada');
+  if ($ && html) {
+    const fallback = extractVideoSources($, html);
+    if (fallback) {
+      const embedded = detectEmbeddedPtSubs({
+        videoUrl: fallback.videoUrl,
+        videoPageUrl,
+        html,
+      });
+      return applySubtitleHints(
+        {
+          ...fallback,
+          subtitles: extractSubtitles(html),
+          qualities: [],
+          streamReferer: config.ANIMEFIRE_BASE,
+        },
+        { embedded, legendado: true }
+      );
+    }
+  }
 
-  return { ...video, subtitles: extractSubtitles(html), qualities: [] };
+  throw new Error('Nenhuma fonte de vídeo encontrada');
 }
 
 async function getEpisodeStream(episodeUrl, _options = {}) {
@@ -473,4 +561,6 @@ module.exports = {
   getAnimeFromSource,
   titleSimilarity,
   buildSearchQueries,
+  parseEpisodeRef,
+  buildVideoApiUrl,
 };

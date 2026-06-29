@@ -47,6 +47,7 @@ function translateGenres(genres) {
 }
 
 function pickDisplayTitle(anime, sourceMatch) {
+  if (anime.title_portuguese) return anime.title_portuguese;
   if (sourceMatch?.name && !/sub ita|ita\)/i.test(sourceMatch.name)) {
     return sourceMatch.name;
   }
@@ -91,7 +92,7 @@ function localizeAnime(anime, sourceMatch, sourceSynopsis) {
     !isSeoBlurb(cleanedSource) &&
     (cleanedSource.length > 80 || /[áàâãéêíóôõúç]/i.test(cleanedSource));
 
-  const jikanSynopsis = cleanSynopsis(anime.synopsis);
+  const jikanSynopsis = cleanSynopsis(anime.synopsis_pt || anime.synopsis);
   const hasPtJikan = jikanSynopsis && /[áàâãéêíóôõúç]/i.test(jikanSynopsis);
 
   let synopsis;

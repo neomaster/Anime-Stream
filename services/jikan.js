@@ -44,18 +44,30 @@ async function jikanFetch(path, attempt = 0) {
   return data;
 }
 
+function pickLocalizedTitle(titles, typePattern) {
+  const hit = (titles || []).find((t) => typePattern.test(t.type || ''));
+  return hit?.title || null;
+}
+
 function formatAnime(anime) {
   const synonyms = (anime.titles || [])
     .map((t) => t.title)
     .filter((t) => t && t !== anime.title);
+
+  const title_portuguese = pickLocalizedTitle(anime.titles, /portuguese|brazil|pt-?br/i);
+
+  const synopsis_pt =
+    anime.synopsis && /[áàâãéêíóôõúç]/i.test(anime.synopsis) ? anime.synopsis : null;
 
   return {
     mal_id: anime.mal_id,
     title: anime.title,
     title_english: anime.title_english,
     title_japanese: anime.title_japanese,
+    title_portuguese,
     synonyms,
     synopsis: anime.synopsis,
+    synopsis_pt,
     poster: anime.images?.jpg?.large_image_url || anime.images?.jpg?.image_url,
     poster_small: anime.images?.jpg?.small_image_url,
     score: anime.score,

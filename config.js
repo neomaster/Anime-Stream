@@ -19,4 +19,5 @@ module.exports = {
     process.env.X1337_MIRRORS || 'https://www.1377x.to,https://www.1337x.st,https://1337x.gd',
   USER_AGENT:
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+  WYZIE_API_KEY: process.env.WYZIE_API_KEY || '',
 };

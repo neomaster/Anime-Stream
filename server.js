@@ -14,6 +14,7 @@ const torrentStream = require('./services/torrent-stream');
 const altPublic = require('./services/alt-public');
 const { localizeAnime } = require('./services/locale-pt');
 const { fetchSourceSynopsis } = require('./services/source-meta');
+const subtitleSources = require('./services/subtitle-sources');
 
 const app = express();
 const pkg = require('./package.json');
@@ -404,6 +405,29 @@ async function resolveEpisodeStream(req, episodeUrl, audioPref, episodeNumber) {
   const opts = { audioPref, episodeNumber };
   let stream = await streaming.getEpisodeStream(episodeUrl, opts);
 
+  const malId = parseInt(req.query.mal, 10) || 0;
+  if (malId > 0 && episodeNumber > 0 && subtitleSources.needsPtBrSubs(stream)) {
+    try {
+      const { anime, sourceMatch } = await resolveAnimeSource(malId, audioPref);
+      stream = await subtitleSources.enrichStreamSubtitles(stream, {
+        malId,
+        episodeNumber,
+        audioPref,
+        titles: [
+          anime.title,
+          anime.title_portuguese,
+          anime.title_english,
+          anime.title_japanese,
+          ...(anime.synonyms || []),
+        ].filter(Boolean),
+        sourceMatch,
+        episodeUrl,
+      });
+    } catch (err) {
+      console.warn('[subtitle-enrich]', err.message);
+    }
+  }
+
   const needsFallback =
     config.CLOUD_MODE &&
     BLOCKED_CDN_RE.test(stream.videoUrl || '') &&
@@ -412,7 +436,6 @@ async function resolveEpisodeStream(req, episodeUrl, audioPref, episodeNumber) {
 
   if (!needsFallback) return stream;
 
-  const malId = parseInt(req.query.mal, 10);
   cache.del(`source-match:v3:${malId}:${audioPref}`);
   cache.del(`episodes:v3:${malId}:${audioPref}`);
 
