@@ -205,17 +205,7 @@ async function getEpisodesForCandidate(candidate) {
   return eps;
 }
 
-function isCloudBlockedSource(candidate) {
-  if (!config.CLOUD_MODE) return false;
-  return candidate?.source === 'animesaturn';
-}
-
 async function tryCandidate(candidate, options) {
-  if (isCloudBlockedSource(candidate)) {
-    console.warn('[match-skip] AnimeSaturn ignorado na nuvem (CDN bloqueado no datacenter)');
-    return null;
-  }
-
   const eps = await getEpisodesForCandidate(candidate);
   if (!eps.length) return null;
 
@@ -283,7 +273,7 @@ async function matchFromResults(results, jikanTitle, alternatives = [], options 
         } else if (c.source === 'animeunity') {
           bonus += audioPref === 'legendado' ? 0.16 : 0.1;
         } else if (c.source === 'animesaturn') {
-          bonus += audioPref === 'legendado' && !/sub_ita|_ita\b/i.test(ref) ? 0.04 : 0.02;
+          bonus += audioPref === 'legendado' && !/sub_ita|_ita\b/i.test(ref) ? 0.06 : 0.03;
         }
 
         return { ...c, matchScore: c.matchScore + bonus };
@@ -292,10 +282,29 @@ async function matchFromResults(results, jikanTitle, alternatives = [], options 
   }
 
   const tryLimit = useDirectUnity() ? 5 : 12;
-  for (const candidate of ranked.slice(0, tryLimit)) {
+  const primary = config.CLOUD_MODE
+    ? ranked.filter((c) => c.source !== 'animesaturn')
+    : ranked;
+  const saturnFallback = config.CLOUD_MODE
+    ? ranked.filter((c) => c.source === 'animesaturn')
+    : [];
+
+  for (const candidate of primary.slice(0, tryLimit)) {
     try {
       const match = await tryCandidate(candidate, matchOptions);
       if (match) return match;
+    } catch {
+      /* next */
+    }
+  }
+
+  for (const candidate of saturnFallback.slice(0, 4)) {
+    try {
+      const match = await tryCandidate(candidate, matchOptions);
+      if (match) {
+        console.warn('[match-fallback] AnimeSaturn (Unity/AnimeFire indisponiveis na nuvem)');
+        return match;
+      }
     } catch {
       /* next */
     }

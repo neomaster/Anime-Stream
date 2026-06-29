@@ -90,14 +90,16 @@ async function validateSourceCandidate(candidate, context, readMalId) {
   const titles = altTitles.filter(Boolean);
   const expected = normalizeMalId(expectedMalId);
   const trustTitle = fastPath || matchScore >= 0.88;
+  let malConfirmed = false;
 
-  if (expected && readMalId && !trustTitle) {
+  if (expected && readMalId) {
     const sourceMalId = normalizeMalId(await readMalId(candidate.url));
     if (sourceMalId) {
       if (sourceMalId !== expected) {
         return { ok: false, reason: `MAL ID divergente (${sourceMalId} != ${expected})` };
       }
-    } else {
+      malConfirmed = true;
+    } else if (!trustTitle) {
       const titleCheck = validateTitleMatch(candidate.name, titles, jikanTitle);
       if (!titleCheck.ok || titleCheck.score < MIN_TITLE_SCORE_NO_MAL) {
         return {
@@ -121,7 +123,7 @@ async function validateSourceCandidate(candidate, context, readMalId) {
   const epCheck = validateEpisodeCount(episodes, expectedEpisodes, status);
   if (!epCheck.ok) return epCheck;
 
-  if (jikanTitle && candidate.name) {
+  if (jikanTitle && candidate.name && !malConfirmed && !trustTitle) {
     const sim = titleSimilarity(jikanTitle, candidate.name);
     if (sim < 0.45 && expected) {
       return { ok: false, reason: `Similaridade baixa (${sim.toFixed(2)})` };

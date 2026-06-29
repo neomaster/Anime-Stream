@@ -104,6 +104,7 @@ function expandFranchiseQueries(raw) {
   const lower = t.toLowerCase();
   const isYoujitsu =
     /youkoso|you[- ]?jitsu|classroom of the elite|kyoushitsu/i.test(lower);
+  const isWistoria = /wistoria|tsue to tsurugi|wand and sword/i.test(lower);
   const season = parseSeasonNumber(t);
 
   if (isYoujitsu && season) {
@@ -111,6 +112,15 @@ function expandFranchiseQueries(raw) {
     phrases.push({ text: `classroom of the elite season ${season}`, weight: 0.98 });
     phrases.push({ text: `you jitsu ${season}`, weight: 0.97 });
     phrases.push({ text: `you-jitsu ${season}`, weight: 0.96 });
+  }
+
+  if (isWistoria) {
+    phrases.push({ text: 'wistoria', weight: 1 });
+    if (season) {
+      phrases.push({ text: `wistoria ${season}`, weight: 1 });
+      phrases.push({ text: `wistoria season ${season}`, weight: 0.99 });
+      phrases.push({ text: `wistoria wand and sword ${season}`, weight: 0.98 });
+    }
   }
 
   const nenseiArc = t.match(/(\d+-nensei-hen(?:\s+\d+-gakki)?)/i);
@@ -486,6 +496,10 @@ function buildPrioritizedQueries(titles) {
 
   for (const raw of titles) {
     for (const { text } of expandFranchiseQueries(raw)) push(text);
+  }
+
+  for (const token of distinctiveTokens(titles)) {
+    if (token.length >= 4) push(token);
   }
 
   for (const q of buildSearchQueries(titles)) push(q);
