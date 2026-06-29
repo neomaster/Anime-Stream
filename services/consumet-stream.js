@@ -553,4 +553,6 @@ module.exports = {
   buildSearchQueries,
   decodeRef,
   encodeRef,
+  getEpisodesForCandidate,
+  readCandidateMalId,
 };

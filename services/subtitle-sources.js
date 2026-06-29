@@ -1,6 +1,7 @@
 const fetch = require('node-fetch');
 const config = require('../config');
 const goanime = require('./goanime');
+const legendasNet = require('./legendas-net');
 const { normalizeSubtitles } = require('./subtitles');
 
 function hasPtBrSubs(subs) {
@@ -148,6 +149,10 @@ async function enrichStreamSubtitles(stream, ctx = {}) {
   }
 
   if (!hasPtBrSubs(collected) && !embeddedPatch) {
+    collected.push(...(await legendasNet.searchPtBrSubtitles(ctx.titles, ctx.episodeNumber)));
+  }
+
+  if (!hasPtBrSubs(collected) && !embeddedPatch) {
     collected.push(...(await fetchFromWyzie(ctx.titles, ctx.episodeNumber)));
   }
 
@@ -169,4 +174,5 @@ module.exports = {
   enrichStreamSubtitles,
   fetchAnimeFireEpisodeSubs,
   findAnimeFireMatch,
+  fetchFromWyzie,
 };

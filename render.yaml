@@ -33,5 +33,8 @@ services:
       # Saturn NÃO é fonte principal no legendado; só se LEGENDADO_SATURN_FALLBACK=true
       - key: LEGENDADO_SATURN_FALLBACK
         value: "false"
+      # Opcional: legendas externas via Wyzie (store.wyzie.io/redeem)
+      # - key: WYZIE_API_KEY
+      #   sync: false
       - key: VAULT_SECRET
         generateValue: true

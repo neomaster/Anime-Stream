@@ -606,13 +606,29 @@ img {
   font-size: 0.88rem;
 }
 
-.audio-pref-controls select {
+.audio-pref-controls select,
+.version-controls select {
   background: var(--bg-elevated);
   border: 1px solid var(--border);
   color: var(--text);
   padding: 0.35rem 0.65rem;
   border-radius: 8px;
   font-family: inherit;
+}
+
+.version-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.88rem;
+  flex-wrap: wrap;
+}
+
+.version-hint {
+  width: 100%;
+  margin: 0.25rem 0 0;
+  font-size: 0.82rem;
+  color: var(--text-muted, #9ca3af);
 }
 
 .embedded-sub-info {

@@ -15,6 +15,7 @@ const $$ = (sel) => document.querySelectorAll(sel);
 const EP_PAGE = 60;
 const WATCH_KEY = 'anime_stream_watch';
 const FAV_KEY = 'anime_stream_favs';
+const VERSION_KEY = 'anime_stream_version_pref';
 
 const state = {
   currentAnime: null,
@@ -28,6 +29,8 @@ const state = {
   searchTimeout: null,
   currentStream: null,
   altSourcesEnabled: false,
+  versions: [],
+  selectedVersionId: null,
 };
 
 let detailSessionGeneration = 0;
@@ -258,6 +261,111 @@ function resumeEpisode(progress) {
   }
 }
 
+function getVersionPrefs() {
+  return safeGetJson(VERSION_KEY, {});
+}
+
+function saveVersionPref(malId, versionId) {
+  if (!malId || !versionId) return;
+  const prefs = getVersionPrefs();
+  prefs[String(malId)] = versionId;
+  safeSetJson(VERSION_KEY, prefs);
+}
+
+function formatVersionOption(v) {
+  const pt = v.subtitlePtBr ? ' · PT-BR' : '';
+  const star = v.recommended ? ' ★' : '';
+  return `${v.providerLabel} · ${v.audioLabel} · ${v.subtitleLabel}${pt}${star}`;
+}
+
+function renderVersionSelect(versions, selectedId) {
+  const wrap = $('#versionControls');
+  const sel = $('#versionSelect');
+  const hint = $('#versionHint');
+  state.versions = versions || [];
+
+  if (!state.versions.length) {
+    wrap.hidden = true;
+    hint.hidden = true;
+    state.selectedVersionId = null;
+    return;
+  }
+
+  const stored = state.malId ? getVersionPrefs()[String(state.malId)] : null;
+  const initial =
+    (selectedId && state.versions.some((v) => v.id === selectedId) && selectedId) ||
+    (stored && state.versions.some((v) => v.id === stored) && stored) ||
+    state.versions.find((v) => v.recommended)?.id ||
+    state.versions[0].id;
+
+  sel.innerHTML = state.versions
+    .map(
+      (v) =>
+        `<option value="${escapeHtml(v.id)}"${v.id === initial ? ' selected' : ''}>${escapeHtml(formatVersionOption(v))}</option>`
+    )
+    .join('');
+
+  state.selectedVersionId = initial;
+  wrap.hidden = false;
+  updateVersionHint();
+
+  if (!sel.dataset.bound) {
+    sel.dataset.bound = '1';
+    sel.addEventListener('change', () => {
+      state.selectedVersionId = sel.value;
+      if (state.malId) saveVersionPref(state.malId, state.selectedVersionId);
+      reloadAnimeWithVersion();
+    });
+  }
+}
+
+function updateVersionHint() {
+  const hint = $('#versionHint');
+  const current = state.versions.find((v) => v.id === state.selectedVersionId);
+  if (!current) {
+    hint.hidden = true;
+    return;
+  }
+  hint.hidden = false;
+  const sources = (current.subtitleSources || []).join(', ') || 'streaming';
+  hint.textContent = current.subtitlePtBr
+    ? `Recomendado para PT-BR: ${current.subtitleLabel} (${sources}).`
+    : `Sem legenda PT-BR nesta versão. Tente outra opção ou fonte externa ao reproduzir.`;
+}
+
+async function reloadAnimeWithVersion() {
+  if (!state.malId) return;
+  const malId = state.malId;
+  const loadGen = ++detailSessionGeneration;
+  const isStale = () => loadGen !== detailSessionGeneration;
+  const audio = encodeURIComponent(Subtitles.getAudioPref());
+  const sourceParam = state.selectedVersionId
+    ? `&sourceId=${encodeURIComponent(state.selectedVersionId)}`
+    : '';
+
+  $('#sourceBadge').textContent = '⏳ Trocando versão…';
+  $('#episodesGrid').innerHTML = '<p class="ep-empty">Carregando episódios…</p>';
+  $('#playerSection').hidden = true;
+
+  try {
+    const data = await api(`/api/anime/${malId}?audio=${audio}${sourceParam}`, { timeoutMs: 180000 });
+    if (isStale()) return;
+    state.sourceUrl = data.source?.url || null;
+    renderVersionSelect(data.versions || state.versions, data.selectedVersionId);
+    renderDetailCommon({
+      title: displayTitle(data.anime),
+      synopsis: data.anime.synopsis,
+      synopsisFull: data.anime.synopsisFull,
+      poster: data.anime.poster,
+      source: data.source,
+      episodes: data.episodes,
+    });
+  } catch (err) {
+    if (isStale()) return;
+    showToast(err.message || 'Falha ao trocar versão', true);
+  }
+}
+
 function renderDetailCommon({ title, synopsis, synopsisFull, poster, source, episodes }) {
   $('#detailTitle').textContent = title;
   const synEl = $('#detailSynopsis');
@@ -273,7 +381,10 @@ function renderDetailCommon({ title, synopsis, synopsisFull, poster, source, epi
 
   const badge = $('#sourceBadge');
   if (source) {
-    badge.innerHTML = `▶ ${escapeHtml(source.name)}`;
+    const provider = source.providerLabel || source.source || '';
+    const sub = source.subtitleLabel ? ` · ${source.subtitleLabel}` : '';
+    const pt = source.subtitlePtBr ? ' ✓ PT-BR' : '';
+    badge.innerHTML = `▶ ${escapeHtml(provider)} · ${escapeHtml(source.name)}${escapeHtml(sub)}${pt}`;
   } else {
     badge.textContent = '⚠ Não encontrado nas fontes de streaming';
   }
@@ -334,7 +445,9 @@ async function openAnime(malId) {
     });
     $('#detailSynopsis').textContent = 'Buscando episódios nas fontes de streaming…';
 
-    const data = await api(`/api/anime/${malId}?audio=${audio}`, { timeoutMs: 180000 });
+    const storedVersion = getVersionPrefs()[String(malId)];
+    const versionParam = storedVersion ? `&sourceId=${encodeURIComponent(storedVersion)}` : '';
+    const data = await api(`/api/anime/${malId}?audio=${audio}${versionParam}`, { timeoutMs: 180000 });
     if (isStale()) return;
 
     anime = data.anime;
@@ -342,6 +455,8 @@ async function openAnime(malId) {
     state.sourceUrl = data.source?.url || null;
     setAnimeKey(malId, null, displayTitle(anime), anime.poster);
     renderAnimeMeta(anime);
+    renderVersionSelect(data.versions || [], data.selectedVersionId);
+    if (state.selectedVersionId && state.malId) saveVersionPref(state.malId, state.selectedVersionId);
 
     if (!data.episodes?.length && !data.source?.url) {
       renderDetailCommon({
@@ -353,8 +468,10 @@ async function openAnime(malId) {
         episodes: [],
       });
       $('#sourceBadge').textContent = '⚠ Não encontrado nas fontes de streaming';
+      $('#versionControls').hidden = true;
+      $('#versionHint').hidden = true;
       $('#episodesGrid').innerHTML =
-        '<p class="ep-empty">Nenhum episódio encontrado nas fontes disponíveis.</p>';
+        '<p class="ep-empty">Nenhum episódio encontrado. Tente outra versão no seletor acima ou altere o áudio.</p>';
       return;
     }
 
@@ -700,8 +817,11 @@ async function playEpisode(episode, btn, idx) {
 
   try {
     const malParam = state.malId ? `&mal=${encodeURIComponent(state.malId)}` : '';
+    const versionParam = state.selectedVersionId
+      ? `&sourceId=${encodeURIComponent(state.selectedVersionId)}`
+      : '';
     const stream = await api(
-      `/api/stream?url=${encodeURIComponent(episode.url)}&audio=${encodeURIComponent(Subtitles.getAudioPref())}&ep=${encodeURIComponent(episode.number)}${malParam}`
+      `/api/stream?url=${encodeURIComponent(episode.url)}&audio=${encodeURIComponent(Subtitles.getAudioPref())}&ep=${encodeURIComponent(episode.number)}${malParam}${versionParam}`
     );
     if (isStale()) return;
 
